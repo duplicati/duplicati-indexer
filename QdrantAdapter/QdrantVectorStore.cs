@@ -57,10 +57,10 @@ public class QdrantVectorStore : IVectorStore
     }
 
     /// <inheritdoc />
-    public async Task UpsertVectorAsync(Guid fileId, string content, float[] vector, CancellationToken cancellationToken = default)
+    public async Task UpsertVectorAsync(Guid fileId, string content, float[] vector, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Upserting vector for file {FileId} into Qdrant collection {Collection}",
-            fileId, _collectionName);
+        _logger.LogInformation("Upserting vector for file {FileId} into Qdrant collection {Collection} with groups {Groups}",
+            fileId, _collectionName, string.Join(", ", groupIds));
 
         var point = new PointStruct
         {
@@ -69,7 +69,8 @@ public class QdrantVectorStore : IVectorStore
             Payload =
             {
                 ["content"] = content,
-                ["file_id"] = fileId.ToString()
+                ["file_id"] = fileId.ToString(),
+                ["group_ids"] = new Value { ListValue = new ListValue { Values = { groupIds.Select(g => new Value { StringValue = g }) } } }
             }
         };
 
@@ -79,16 +80,20 @@ public class QdrantVectorStore : IVectorStore
     }
 
     /// <inheritdoc />
-    public async Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Searching Qdrant collection {Collection} for top {TopK} matches", _collectionName, topK);
+        _logger.LogInformation("Searching Qdrant collection {Collection} for top {TopK} matches with allowed groups {Groups}", _collectionName, topK, string.Join(", ", allowedGroupIds));
 
         IReadOnlyList<ScoredPoint> searchResult;
         try
         {
+            // Build filter for group IDs using OR condition
+            var filter = BuildGroupFilter(allowedGroupIds);
+
             searchResult = await _client.SearchAsync(
                 collectionName: _collectionName,
                 vector: queryVector,
+                filter: filter,
                 limit: (ulong)topK,
                 cancellationToken: cancellationToken
             );
@@ -130,20 +135,20 @@ public class QdrantVectorStore : IVectorStore
     }
 
     /// <inheritdoc />
-    public async Task<IEnumerable<string>> SearchContentAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<string>> SearchContentAsync(float[] queryVector, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default)
     {
-        var results = await SearchAsync(queryVector, topK, cancellationToken);
+        var results = await SearchAsync(queryVector, allowedGroupIds, topK, cancellationToken);
         return results.Select(r => r.Content);
     }
 
     /// <inheritdoc />
-    public async Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, CancellationToken cancellationToken = default)
+    public async Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
     {
         // Generate a deterministic UUID v5 from fileId + chunkIndex
         // Using DNS namespace UUID combined with our unique identifier
         var chunkId = DeterministicGuid(fileId, chunkIndex);
-        _logger.LogDebug("Upserting chunk vector {ChunkId} for file {FileId} (chunk {ChunkIndex}) into Qdrant collection {Collection}",
-            chunkId, fileId, chunkIndex, _collectionName);
+        _logger.LogDebug("Upserting chunk vector {ChunkId} for file {FileId} (chunk {ChunkIndex}) with groups {Groups}",
+            chunkId, fileId, chunkIndex, string.Join(", ", groupIds));
 
         var point = new PointStruct
         {
@@ -154,7 +159,8 @@ public class QdrantVectorStore : IVectorStore
                 ["content"] = content,
                 ["file_id"] = fileId.ToString(),
                 ["chunk_index"] = chunkIndex,
-                ["is_chunk"] = true
+                ["is_chunk"] = true,
+                ["group_ids"] = new Value { ListValue = new ListValue { Values = { groupIds.Select(g => new Value { StringValue = g }) } } }
             }
         };
 
@@ -196,6 +202,52 @@ public class QdrantVectorStore : IVectorStore
         await _client.DeleteAsync(_collectionName, filter, cancellationToken: cancellationToken);
 
         _logger.LogInformation("Successfully deleted chunk vectors for file {FileId}", fileId);
+    }
+
+    /// <summary>
+    /// Builds a Qdrant filter for matching any of the allowed group IDs.
+    /// If no groups are allowed, returns a filter that matches nothing.
+    /// </summary>
+    private static Filter BuildGroupFilter(IReadOnlyList<string> allowedGroupIds)
+    {
+        // No groups allowed = no access (security: deny by default)
+        if (allowedGroupIds.Count == 0)
+        {
+            // Return a filter that matches nothing (match a non-existent field with impossible value)
+            return new Filter
+            {
+                Must =
+                {
+                    new Condition
+                    {
+                        Field = new FieldCondition
+                        {
+                            Key = "group_ids",
+                            Match = new Match { Keyword = "" }
+                        }
+                    }
+                }
+            };
+        }
+
+        // Build OR conditions for each group ID
+        var conditions = new List<Condition>();
+        foreach (var groupId in allowedGroupIds)
+        {
+            conditions.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "group_ids",
+                    Match = new Match { Keyword = groupId }
+                }
+            });
+        }
+
+        return new Filter
+        {
+            Should = { conditions }
+        };
     }
 
     /// <summary>

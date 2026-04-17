@@ -46,4 +46,10 @@ public class BackupSource
     /// Gets or sets a value indicating whether the backup source processing is paused (e.g. circuit breaker tripped).
     /// </summary>
     public bool IsPaused { get; set; }
+
+    /// <summary>
+    /// Gets or sets the default group IDs for ACL on all indexed content from this backup.
+    /// These are applied unless overridden by path-specific rules.
+    /// </summary>
+    public List<string> DefaultGroupIds { get; set; } = new();
 }

@@ -64,12 +64,12 @@ public class ChromaVectorStore : IVectorStore
         }
     }
 
-    public async Task UpsertVectorAsync(Guid fileId, string content, float[] vector, CancellationToken cancellationToken = default)
+    public async Task UpsertVectorAsync(Guid fileId, string content, float[] vector, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
     {
         await EnsureCollectionInitializedAsync(cancellationToken);
 
-        _logger.LogInformation("Upserting vector for file {FileId} into Chroma collection {Collection}",
-            fileId, _collectionName);
+        _logger.LogInformation("Upserting vector for file {FileId} into Chroma collection {Collection} with groups {Groups}",
+            fileId, _collectionName, string.Join(", ", groupIds));
 
         var request = new
         {
@@ -80,7 +80,8 @@ public class ChromaVectorStore : IVectorStore
             {
                 new Dictionary<string, object>
                 {
-                    ["file_id"] = fileId.ToString()
+                    ["file_id"] = fileId.ToString(),
+                    ["group_ids"] = groupIds.ToList()
                 }
             }
         };
@@ -98,13 +99,13 @@ public class ChromaVectorStore : IVectorStore
         _logger.LogInformation("Successfully upserted vector for file {FileId}", fileId);
     }
 
-    public async Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, CancellationToken cancellationToken = default)
+    public async Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
     {
         await EnsureCollectionInitializedAsync(cancellationToken);
 
         var chunkId = DeterministicGuid(fileId, chunkIndex);
-        _logger.LogDebug("Upserting chunk vector {ChunkId} for file {FileId} (chunk {ChunkIndex})",
-            chunkId, fileId, chunkIndex);
+        _logger.LogDebug("Upserting chunk vector {ChunkId} for file {FileId} (chunk {ChunkIndex}) with groups {Groups}",
+            chunkId, fileId, chunkIndex, string.Join(", ", groupIds));
 
         var request = new
         {
@@ -117,7 +118,8 @@ public class ChromaVectorStore : IVectorStore
                 {
                     ["file_id"] = fileId.ToString(),
                     ["chunk_index"] = chunkIndex,
-                    ["is_chunk"] = true
+                    ["is_chunk"] = true,
+                    ["group_ids"] = groupIds.ToList()
                 }
             }
         };
@@ -135,17 +137,21 @@ public class ChromaVectorStore : IVectorStore
         _logger.LogDebug("Successfully upserted chunk vector {ChunkId} for file {FileId}", chunkId, fileId);
     }
 
-    public async Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default)
     {
         await EnsureCollectionInitializedAsync(cancellationToken);
 
-        _logger.LogInformation("Searching Chroma collection {Collection} for top {TopK} matches", _collectionName, topK);
+        _logger.LogInformation("Searching Chroma collection {Collection} for top {TopK} matches with allowed groups {Groups}", _collectionName, topK, string.Join(", ", allowedGroupIds));
+
+        // Build where clause for group filtering using $in operator
+        var whereClause = BuildGroupFilter(allowedGroupIds);
 
         var request = new
         {
             query_embeddings = new[] { queryVector },
             n_results = topK,
-            include = new[] { "metadatas", "documents", "distances" }
+            include = new[] { "metadatas", "documents", "distances" },
+            where = whereClause
         };
 
         var response = await _httpClient.PostAsJsonAsync(
@@ -189,9 +195,9 @@ public class ChromaVectorStore : IVectorStore
         return searchResults.Where(r => !string.IsNullOrEmpty(r.Content));
     }
 
-    public async Task<IEnumerable<string>> SearchContentAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<string>> SearchContentAsync(float[] queryVector, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default)
     {
-        var results = await SearchAsync(queryVector, topK, cancellationToken);
+        var results = await SearchAsync(queryVector, allowedGroupIds, topK, cancellationToken);
         return results.Select(r => r.Content);
     }
 
@@ -310,6 +316,37 @@ public class ChromaVectorStore : IVectorStore
         _collectionId = collection?.Id;
 
         _logger.LogInformation("Created Chroma collection: {Collection} (ID: {Id})", _collectionName, _collectionId);
+    }
+
+    /// <summary>
+    /// Builds a ChromaDB where clause for filtering by allowed group IDs.
+    /// Uses the $in operator to match any of the allowed groups.
+    /// If no groups are allowed, returns a filter that matches nothing.
+    /// </summary>
+    private static Dictionary<string, object>? BuildGroupFilter(IReadOnlyList<string> allowedGroupIds)
+    {
+        // No groups allowed = no access (security: deny by default)
+        if (allowedGroupIds.Count == 0)
+        {
+            // Return a filter that matches nothing (group_ids doesn't contain empty string)
+            return new Dictionary<string, object>
+            {
+                ["group_ids"] = new Dictionary<string, object>
+                {
+                    ["$in"] = new List<string>()
+                }
+            };
+        }
+
+        // ChromaDB uses $in operator for array containment check
+        // The format is: { "group_ids": { "$in": ["group1", "group2"] } }
+        return new Dictionary<string, object>
+        {
+            ["group_ids"] = new Dictionary<string, object>
+            {
+                ["$in"] = allowedGroupIds.ToList()
+            }
+        };
     }
 
     private static Guid DeterministicGuid(Guid fileId, int chunkIndex)

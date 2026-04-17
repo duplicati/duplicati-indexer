@@ -41,4 +41,9 @@ public class IndexedContent
     /// Gets or sets the timestamp when this content was indexed.
     /// </summary>
     public DateTimeOffset IndexedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the list of group IDs that are allowed to access this content.
+    /// </summary>
+    public List<string> GroupIds { get; set; } = new();
 }

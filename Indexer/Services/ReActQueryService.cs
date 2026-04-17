@@ -103,6 +103,7 @@ public class ReActQueryService : IRagQueryService
     private readonly IHybridSearchService _hybridSearchService;
     private readonly IFileMetadataQueryService _fileMetadataQueryService;
     private readonly RagQuerySessionService _sessionService;
+    private readonly IGroupPermissionService _groupPermissionService;
     private readonly ILogger<ReActQueryService> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
 
@@ -157,18 +158,21 @@ Guidelines:
     /// <param name="hybridSearchService">The hybrid search service for searching content.</param>
     /// <param name="fileMetadataQueryService">The file metadata query service for file information.</param>
     /// <param name="sessionService">The session service for managing query sessions.</param>
+    /// <param name="groupPermissionService">The group permission service for ACL.</param>
     /// <param name="logger">The logger.</param>
     public ReActQueryService(
         ILLMClient llmClient,
         IHybridSearchService hybridSearchService,
         IFileMetadataQueryService fileMetadataQueryService,
         RagQuerySessionService sessionService,
+        IGroupPermissionService groupPermissionService,
         ILogger<ReActQueryService> logger)
     {
         _llmClient = llmClient;
         _hybridSearchService = hybridSearchService;
         _fileMetadataQueryService = fileMetadataQueryService;
         _sessionService = sessionService;
+        _groupPermissionService = groupPermissionService;
         _logger = logger;
         _jsonOptions = new JsonSerializerOptions
         {
@@ -189,6 +193,10 @@ Guidelines:
     public async Task<RagQueryResult> QueryAsync(Guid sessionId, string query, int topK = 5, Func<RagQueryEvent, Task>? onEvent = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Processing ReAct RAG query for session {SessionId}: {Query}", sessionId, query);
+
+        // Get the current user's allowed group IDs for ACL filtering
+        var allowedGroupIds = _groupPermissionService.GetCurrentUserGroupIds();
+        _logger.LogInformation("Querying with allowed groups: {Groups}", string.Join(", ", allowedGroupIds));
 
         var queryTimestamp = DateTimeOffset.UtcNow;
         var steps = new List<ReActStep>();
@@ -240,7 +248,7 @@ Guidelines:
             if (step.Action.Equals("search_database", StringComparison.OrdinalIgnoreCase))
             {
                 await emitEvent("action", $"Searching database for: {step.ActionInput}");
-                var searchResults = await ExecuteDatabaseSearchAsync(step.ActionInput, topK, cancellationToken);
+                var searchResults = await ExecuteDatabaseSearchAsync(step.ActionInput, allowedGroupIds, topK, cancellationToken);
                 step.Observation = searchResults;
                 conversationContext += $"\n\nObservation from search: {searchResults}";
             }
@@ -426,7 +434,7 @@ Guidelines:
         }
     }
 
-    private async Task<string> ExecuteDatabaseSearchAsync(string searchQuery, int topK, CancellationToken cancellationToken)
+    private async Task<string> ExecuteDatabaseSearchAsync(string searchQuery, IReadOnlyList<string> allowedGroupIds, int topK, CancellationToken cancellationToken)
     {
         try
         {
@@ -437,7 +445,7 @@ Guidelines:
                 RrfK = 60
             };
 
-            var searchResults = await _hybridSearchService.SearchAsync(searchQuery, searchOptions, cancellationToken);
+            var searchResults = await _hybridSearchService.SearchAsync(searchQuery, allowedGroupIds, searchOptions, cancellationToken);
             var results = searchResults.ToList();
 
             if (!results.Any())

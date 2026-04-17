@@ -34,4 +34,10 @@ public record ExtractTextAndIndex
     /// Gets the original file path in the backup.
     /// </summary>
     public required string OriginalFilePath { get; init; }
+
+    /// <summary>
+    /// Gets the default group IDs for ACL on this file's content.
+    /// These are the backup source's default groups.
+    /// </summary>
+    public IReadOnlyList<string> DefaultGroupIds { get; init; } = new List<string>();
 }
