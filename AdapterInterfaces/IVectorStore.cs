@@ -19,9 +19,10 @@ public interface IVectorStore
     /// <param name="fileId">The unique identifier of the file.</param>
     /// <param name="content">The text content associated with the vector.</param>
     /// <param name="vector">The embedding vector.</param>
+    /// <param name="groupIds">The list of group IDs allowed to access this content.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task UpsertVectorAsync(Guid fileId, string content, float[] vector, CancellationToken cancellationToken = default);
+    Task UpsertVectorAsync(Guid fileId, string content, float[] vector, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stores or updates a vector embedding for a file chunk.
@@ -30,9 +31,10 @@ public interface IVectorStore
     /// <param name="chunkIndex">The index of the chunk within the file.</param>
     /// <param name="content">The text content associated with the vector.</param>
     /// <param name="vector">The embedding vector.</param>
+    /// <param name="groupIds">The list of group IDs allowed to access this content.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, CancellationToken cancellationToken = default);
+    Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes all chunk vectors for a file. Used when re-indexing a file with different chunks.
@@ -47,18 +49,20 @@ public interface IVectorStore
     /// Returns scored results suitable for RRF fusion.
     /// </summary>
     /// <param name="queryVector">The query embedding vector.</param>
+    /// <param name="allowedGroupIds">The list of group IDs the user is allowed to access.</param>
     /// <param name="topK">The maximum number of results to return.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A collection of search results with scores and metadata.</returns>
-    Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default);
+    Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Searches for similar content using a query vector and returns only content strings.
     /// Legacy method for backward compatibility.
     /// </summary>
     /// <param name="queryVector">The query embedding vector.</param>
+    /// <param name="allowedGroupIds">The list of group IDs the user is allowed to access.</param>
     /// <param name="topK">The maximum number of results to return.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A collection of matching content strings.</returns>
-    Task<IEnumerable<string>> SearchContentAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default);
+    Task<IEnumerable<string>> SearchContentAsync(float[] queryVector, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default);
 }

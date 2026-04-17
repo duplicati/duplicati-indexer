@@ -213,7 +213,8 @@ public class StartFileRestorationHandler
                         Version = message.Version,
                         FileEntryId = fileEntry.Id,
                         RestoredFilePath = restoredFilePath,
-                        OriginalFilePath = fileEntry.Path
+                        OriginalFilePath = fileEntry.Path,
+                        DefaultGroupIds = backupSource.DefaultGroupIds.AsReadOnly()
                     });
                 }
 

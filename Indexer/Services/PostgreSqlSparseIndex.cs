@@ -37,9 +37,9 @@ public class PostgreSqlSparseIndex : ISparseIndex
     }
 
     /// <inheritdoc />
-    public async Task IndexContentAsync(Guid fileId, string content, CancellationToken cancellationToken = default)
+    public async Task IndexContentAsync(Guid fileId, string content, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Indexing content for file {FileId} in PostgreSQL full-text index", fileId);
+        _logger.LogInformation("Indexing content for file {FileId} in PostgreSQL full-text index with groups {Groups}", fileId, string.Join(", ", groupIds));
 
         try
         {
@@ -52,7 +52,8 @@ public class PostgreSqlSparseIndex : ISparseIndex
                 Id = fileId,
                 FileEntryId = fileId,
                 Content = content,
-                IndexedAt = DateTimeOffset.UtcNow
+                IndexedAt = DateTimeOffset.UtcNow,
+                GroupIds = groupIds.ToList()
             };
 
             // Store using Marten (tsvector will be computed by PostgreSQL)
@@ -69,10 +70,10 @@ public class PostgreSqlSparseIndex : ISparseIndex
     }
 
     /// <inheritdoc />
-    public async Task IndexChunkAsync(Guid fileId, int chunkIndex, string content, CancellationToken cancellationToken = default)
+    public async Task IndexChunkAsync(Guid fileId, int chunkIndex, string content, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
     {
         var chunkId = DeterministicGuid(fileId, chunkIndex);
-        _logger.LogDebug("Indexing chunk {ChunkId} for file {FileId} (chunk {ChunkIndex})", chunkId, fileId, chunkIndex);
+        _logger.LogDebug("Indexing chunk {ChunkId} for file {FileId} (chunk {ChunkIndex}) with groups {Groups}", chunkId, fileId, chunkIndex, string.Join(", ", groupIds));
 
         try
         {
@@ -89,7 +90,8 @@ public class PostgreSqlSparseIndex : ISparseIndex
                         'FileEntryId', @FileEntryId,
                         'ChunkIndex', @ChunkIndex,
                         'Content', @Content,
-                        'IndexedAt', @IndexedAt
+                        'IndexedAt', @IndexedAt,
+                        'GroupIds', @GroupIds::jsonb
                     )
                 )
                 ON CONFLICT (id) DO UPDATE SET
@@ -101,6 +103,7 @@ public class PostgreSqlSparseIndex : ISparseIndex
             command.Parameters.AddWithValue("@ChunkIndex", chunkIndex);
             command.Parameters.AddWithValue("@Content", content);
             command.Parameters.AddWithValue("@IndexedAt", DateTimeOffset.UtcNow);
+            command.Parameters.AddWithValue("@GroupIds", System.Text.Json.JsonSerializer.Serialize(groupIds));
 
             await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -165,9 +168,9 @@ public class PostgreSqlSparseIndex : ISparseIndex
     }
 
     /// <inheritdoc />
-    public async Task<IEnumerable<SearchResult>> SearchAsync(string query, int topK = 5, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<SearchResult>> SearchAsync(string query, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Performing full-text search for: {Query}", query);
+        _logger.LogInformation("Performing full-text search for: {Query} with allowed groups {Groups}", query, string.Join(", ", allowedGroupIds));
 
         var results = new List<SearchResult>();
 
@@ -176,7 +179,10 @@ public class PostgreSqlSparseIndex : ISparseIndex
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
-            const string sql = @"
+            // Build the group filter condition
+            var groupFilter = BuildGroupFilter(allowedGroupIds);
+
+            string sql = @"
                 SELECT
                     id,
                     data->>'Content' as content,
@@ -189,12 +195,19 @@ public class PostgreSqlSparseIndex : ISparseIndex
                     ) as rank
                 FROM indexed_content
                 WHERE to_tsvector('english', data->>'Content') @@ plainto_tsquery('english', @Query)
+                AND (" + groupFilter + @")
                 ORDER BY rank DESC
                 LIMIT @Limit";
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Query", query);
             command.Parameters.AddWithValue("@Limit", topK);
+
+            // Add group filter parameters
+            for (int i = 0; i < allowedGroupIds.Count; i++)
+            {
+                command.Parameters.AddWithValue($"@Group{i}", allowedGroupIds[i]);
+            }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             int rank = 1;
@@ -232,6 +245,25 @@ public class PostgreSqlSparseIndex : ISparseIndex
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Builds a SQL filter condition for group IDs using JSONB containment.
+    /// </summary>
+    private static string BuildGroupFilter(IReadOnlyList<string> allowedGroupIds)
+    {
+        if (allowedGroupIds.Count == 0)
+        {
+            return "1=0"; // No groups allowed, return no results
+        }
+
+        var conditions = new List<string>();
+        for (int i = 0; i < allowedGroupIds.Count; i++)
+        {
+            conditions.Add($"data->'GroupIds' @> to_jsonb(@Group{i}::text)");
+        }
+
+        return string.Join(" OR ", conditions);
     }
 
     /// <summary>

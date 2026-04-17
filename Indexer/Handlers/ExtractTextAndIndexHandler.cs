@@ -19,6 +19,7 @@ public class ExtractTextAndIndexHandler
     private readonly ISparseIndex _sparseIndex;
     private readonly ITextChunker _textChunker;
     private readonly IDocumentSession _session;
+    private readonly IGroupPermissionService _groupPermissionService;
     private readonly ILogger<ExtractTextAndIndexHandler> _logger;
 
     /// <summary>
@@ -30,6 +31,7 @@ public class ExtractTextAndIndexHandler
     /// <param name="sparseIndex">The sparse index for full-text search.</param>
     /// <param name="textChunker">The text chunker for splitting large texts.</param>
     /// <param name="session">The Marten document session.</param>
+    /// <param name="groupPermissionService">The group permission service for ACL.</param>
     /// <param name="logger">The logger.</param>
     public ExtractTextAndIndexHandler(
         IContentIndexer contentIndexer,
@@ -38,6 +40,7 @@ public class ExtractTextAndIndexHandler
         ISparseIndex sparseIndex,
         ITextChunker textChunker,
         IDocumentSession session,
+        IGroupPermissionService groupPermissionService,
         ILogger<ExtractTextAndIndexHandler> logger)
     {
         _contentIndexer = contentIndexer;
@@ -46,6 +49,7 @@ public class ExtractTextAndIndexHandler
         _sparseIndex = sparseIndex;
         _textChunker = textChunker;
         _session = session;
+        _groupPermissionService = groupPermissionService;
         _logger = logger;
     }
 
@@ -84,6 +88,12 @@ public class ExtractTextAndIndexHandler
                 throw new InvalidOperationException(
                     $"FileEntry not found for FileEntryId: {message.FileEntryId}");
             }
+
+            // Get the allowed group IDs for this file using the backup source's default groups
+            var groupIds = _groupPermissionService.GetAllowedGroupIds(message.OriginalFilePath, message.DefaultGroupIds);
+            _logger.LogInformation(
+                "File {FilePath} is accessible by groups: {Groups} (default groups from backup: {DefaultGroups})",
+                message.OriginalFilePath, string.Join(", ", groupIds), string.Join(", ", message.DefaultGroupIds));
 
             _logger.LogInformation(
                 "Extracting text from {RestoredFilePath} using Unstructured",
@@ -198,6 +208,7 @@ public class ExtractTextAndIndexHandler
                         chunk.Index,
                         chunk.Content,
                         embedding!,
+                        groupIds,
                         cancellationToken);
 
                     vectorIndexed = true;
@@ -217,6 +228,7 @@ public class ExtractTextAndIndexHandler
                         message.FileEntryId,
                         chunk.Index,
                         chunk.Content,
+                        groupIds,
                         cancellationToken);
 
                     sparseIndexed = true;

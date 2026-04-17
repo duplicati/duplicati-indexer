@@ -11,9 +11,10 @@ public interface ISparseIndex
     /// </summary>
     /// <param name="fileId">The unique identifier of the file.</param>
     /// <param name="content">The text content to index.</param>
+    /// <param name="groupIds">The list of group IDs allowed to access this content.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task IndexContentAsync(Guid fileId, string content, CancellationToken cancellationToken = default);
+    Task IndexContentAsync(Guid fileId, string content, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Indexes content for a file chunk in the sparse index.
@@ -21,9 +22,10 @@ public interface ISparseIndex
     /// <param name="fileId">The unique identifier of the file.</param>
     /// <param name="chunkIndex">The index of the chunk within the file.</param>
     /// <param name="content">The text content to index.</param>
+    /// <param name="groupIds">The list of group IDs allowed to access this content.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task IndexChunkAsync(Guid fileId, int chunkIndex, string content, CancellationToken cancellationToken = default);
+    Task IndexChunkAsync(Guid fileId, int chunkIndex, string content, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes all indexed content for a file.
@@ -37,8 +39,9 @@ public interface ISparseIndex
     /// Performs a full-text search using the provided query.
     /// </summary>
     /// <param name="query">The search query string.</param>
+    /// <param name="allowedGroupIds">The list of group IDs the user is allowed to access.</param>
     /// <param name="topK">The maximum number of results to return.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A collection of search results with scores.</returns>
-    Task<IEnumerable<SearchResult>> SearchAsync(string query, int topK = 5, CancellationToken cancellationToken = default);
+    Task<IEnumerable<SearchResult>> SearchAsync(string query, IReadOnlyList<string> allowedGroupIds, int topK = 5, CancellationToken cancellationToken = default);
 }

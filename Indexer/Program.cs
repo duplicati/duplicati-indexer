@@ -274,6 +274,9 @@ builder.Services.AddScoped<ISparseIndex, PostgreSqlSparseIndex>();
 // Register Hybrid Search Service (combines vector and sparse search with RRF)
 builder.Services.AddScoped<IHybridSearchService, HybridSearchService>();
 
+// Register Group Permission Service (for ACL support)
+builder.Services.AddSingleton<IGroupPermissionService, GroupPermissionService>();
+
 // Register Tokenizer
 builder.Services.AddSingleton<ITokenizer, ApproximationTokenizer>();
 
@@ -382,7 +385,8 @@ app.MapPost("/api/backup-sources", async (CreateBackupSourceRequest request, IDo
         CreatedAt = request.CreatedAt ?? DateTimeOffset.UtcNow,
         LastParsedVersion = request.LastParsedVersion,
         EncryptionPassword = request.EncryptionPassword,
-        TargetUrl = request.TargetUrl ?? string.Empty
+        TargetUrl = request.TargetUrl ?? string.Empty,
+        DefaultGroupIds = request.DefaultGroupIds ?? ["any"]
     };
 
     session.Store(backupSource);
@@ -656,10 +660,13 @@ app.MapGet("/api/files/modified-between", async (DateTimeOffset start, DateTimeO
 });
 
 // API endpoint for RRF hybrid search (OpenClaw integration)
-app.MapPost("/api/search/rrf", async (RrfSearchRequest request, IHybridSearchService hybridSearchService, CancellationToken cancellationToken) =>
+app.MapPost("/api/search/rrf", async (RrfSearchRequest request, IHybridSearchService hybridSearchService, IGroupPermissionService groupPermissionService, CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.Query))
         return Results.BadRequest(new { error = "Query is required" });
+
+    // Get the current user's allowed group IDs for ACL filtering
+    var allowedGroupIds = groupPermissionService.GetCurrentUserGroupIds();
 
     var options = new HybridSearchOptions
     {
@@ -671,9 +678,9 @@ app.MapPost("/api/search/rrf", async (RrfSearchRequest request, IHybridSearchSer
         UseWeightedFusion = request.UseWeightedFusion ?? false
     };
 
-    var results = await hybridSearchService.SearchAsync(request.Query, options, cancellationToken);
+    var results = await hybridSearchService.SearchAsync(request.Query, allowedGroupIds, options, cancellationToken);
 
-    Log.Information("RRF search processed: Query='{Query}', Results={ResultCount}", request.Query, results.Count());
+    Log.Information("RRF search processed: Query='{Query}', Results={ResultCount}, Groups={Groups}", request.Query, results.Count(), string.Join(", ", allowedGroupIds));
 
     return Results.Ok(new RrfSearchResponse(
         request.Query,
@@ -726,7 +733,8 @@ public record CreateBackupSourceRequest(
     DateTimeOffset? CreatedAt,
     DateTimeOffset? LastParsedVersion,
     string? EncryptionPassword,
-    string? TargetUrl
+    string? TargetUrl,
+    List<string>? DefaultGroupIds
 );
 
 // Request DTO for RAG queries

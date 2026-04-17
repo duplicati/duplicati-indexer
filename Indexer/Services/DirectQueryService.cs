@@ -12,6 +12,7 @@ public class DirectQueryService : IRagQueryService
     private readonly ILLMQueryService _llmService;
     private readonly IHybridSearchService _hybridSearchService;
     private readonly RagQuerySessionService _sessionService;
+    private readonly IGroupPermissionService _groupPermissionService;
     private readonly ILogger<DirectQueryService> _logger;
 
     /// <summary>
@@ -20,16 +21,19 @@ public class DirectQueryService : IRagQueryService
     /// <param name="llmService">The LLM service for generating answers.</param>
     /// <param name="hybridSearchService">The hybrid search service for searching content.</param>
     /// <param name="sessionService">The session service for managing query sessions.</param>
+    /// <param name="groupPermissionService">The group permission service for ACL.</param>
     /// <param name="logger">The logger.</param>
     public DirectQueryService(
         ILLMQueryService llmService,
         IHybridSearchService hybridSearchService,
         RagQuerySessionService sessionService,
+        IGroupPermissionService groupPermissionService,
         ILogger<DirectQueryService> logger)
     {
         _llmService = llmService;
         _hybridSearchService = hybridSearchService;
         _sessionService = sessionService;
+        _groupPermissionService = groupPermissionService;
         _logger = logger;
     }
 
@@ -46,6 +50,10 @@ public class DirectQueryService : IRagQueryService
     public async Task<RagQueryResult> QueryAsync(Guid sessionId, string query, int topK = 5, Func<RagQueryEvent, Task>? onEvent = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Processing RAG query for session {SessionId}: {Query}", sessionId, query);
+
+        // Get the current user's allowed group IDs for ACL filtering
+        var allowedGroupIds = _groupPermissionService.GetCurrentUserGroupIds();
+        _logger.LogInformation("Querying with allowed groups: {Groups}", string.Join(", ", allowedGroupIds));
 
         // 1. Get or create session
         var title = await _llmService.GenerateSessionTitleAsync(query, cancellationToken);
@@ -72,7 +80,7 @@ public class DirectQueryService : IRagQueryService
             condensedQuery = query;
         }
 
-        // 4. Perform hybrid search using both vector and full-text search
+        // 4. Perform hybrid search using both vector and full-text search with ACL filtering
         var searchOptions = new HybridSearchOptions
         {
             TopKPerMethod = topK * 2,  // Get more from each method for better fusion
@@ -80,7 +88,7 @@ public class DirectQueryService : IRagQueryService
             RrfK = 60
         };
 
-        var searchResults = await _hybridSearchService.SearchAsync(condensedQuery, searchOptions, cancellationToken);
+        var searchResults = await _hybridSearchService.SearchAsync(condensedQuery, allowedGroupIds, searchOptions, cancellationToken);
 
         // 5. Combine retrieved content into context
         var context = string.Join("\n\n---\n\n", searchResults.Select(r => r.Content));

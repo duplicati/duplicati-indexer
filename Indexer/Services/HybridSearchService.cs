@@ -35,37 +35,39 @@ public class HybridSearchService : IHybridSearchService
     /// <inheritdoc />
     public async Task<IEnumerable<SearchResult>> SearchAsync(
         string query,
+        IReadOnlyList<string> allowedGroupIds,
         HybridSearchOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         options ??= new HybridSearchOptions();
 
         _logger.LogInformation(
-            "Performing hybrid search for: {Query} (vector_weight={VectorWeight}, sparse_weight={SparseWeight})",
-            query, options.VectorWeight, options.SparseWeight);
+            "Performing hybrid search for: {Query} with allowed groups {Groups} (vector_weight={VectorWeight}, sparse_weight={SparseWeight})",
+            query, string.Join(", ", allowedGroupIds), options.VectorWeight, options.SparseWeight);
 
         // Generate embedding for the query
         var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query, cancellationToken);
 
-        return await SearchAsync(query, queryEmbedding, options, cancellationToken);
+        return await SearchAsync(query, queryEmbedding, allowedGroupIds, options, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<IEnumerable<SearchResult>> SearchAsync(
         string queryText,
         float[] queryVector,
+        IReadOnlyList<string> allowedGroupIds,
         HybridSearchOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         options ??= new HybridSearchOptions();
 
         _logger.LogInformation(
-            "Performing hybrid search with pre-computed embedding for: {Query} (topK={TopK}, rrf_k={RrfK})",
-            queryText, options.FinalTopK, options.RrfK);
+            "Performing hybrid search with pre-computed embedding for: {Query} with allowed groups {Groups} (topK={TopK}, rrf_k={RrfK})",
+            queryText, string.Join(", ", allowedGroupIds), options.FinalTopK, options.RrfK);
 
-        // Execute both searches in parallel
-        var vectorSearchTask = _vectorStore.SearchAsync(queryVector, options.TopKPerMethod, cancellationToken);
-        var sparseSearchTask = _sparseIndex.SearchAsync(queryText, options.TopKPerMethod, cancellationToken);
+        // Execute both searches in parallel with group filtering
+        var vectorSearchTask = _vectorStore.SearchAsync(queryVector, allowedGroupIds, options.TopKPerMethod, cancellationToken);
+        var sparseSearchTask = _sparseIndex.SearchAsync(queryText, allowedGroupIds, options.TopKPerMethod, cancellationToken);
 
         await Task.WhenAll(vectorSearchTask, sparseSearchTask);
 
@@ -129,13 +131,14 @@ public class HybridSearchService : IHybridSearchService
     /// <inheritdoc />
     public async Task<IEnumerable<SearchResult>> SearchVectorAsync(
         string query,
+        IReadOnlyList<string> allowedGroupIds,
         int topK = 5,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Performing vector search for: {Query}", query);
+        _logger.LogInformation("Performing vector search for: {Query} with allowed groups {Groups}", query, string.Join(", ", allowedGroupIds));
 
         var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query, cancellationToken);
-        var results = await _vectorStore.SearchAsync(queryEmbedding, topK, cancellationToken);
+        var results = await _vectorStore.SearchAsync(queryEmbedding, allowedGroupIds, topK, cancellationToken);
 
         return results;
     }
@@ -143,12 +146,13 @@ public class HybridSearchService : IHybridSearchService
     /// <inheritdoc />
     public async Task<IEnumerable<SearchResult>> SearchSparseAsync(
         string query,
+        IReadOnlyList<string> allowedGroupIds,
         int topK = 5,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Performing sparse search for: {Query}", query);
+        _logger.LogInformation("Performing sparse search for: {Query} with allowed groups {Groups}", query, string.Join(", ", allowedGroupIds));
 
-        var results = await _sparseIndex.SearchAsync(query, topK, cancellationToken);
+        var results = await _sparseIndex.SearchAsync(query, allowedGroupIds, topK, cancellationToken);
         return results;
     }
 }
