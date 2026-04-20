@@ -12,8 +12,7 @@ COPY ["ChatGPTAdapter/ChatGPTAdapter.csproj", "ChatGPTAdapter/"]
 COPY ["OllamaAdapter/OllamaAdapter.csproj", "OllamaAdapter/"]
 COPY ["UnstructuredAdapter/UnstructuredAdapter.csproj", "UnstructuredAdapter/"]
 COPY ["MarkItDownAdapter/MarkItDownAdapter.csproj", "MarkItDownAdapter/"]
-COPY ["QdrantAdapter/QdrantAdapter.csproj", "QdrantAdapter/"]
-COPY ["ChromaAdapter/ChromaAdapter.csproj", "ChromaAdapter/"]
+COPY ["SurrealAdapter/SurrealAdapter.csproj", "SurrealAdapter/"]
 
 # Copy the duplicati submodule
 COPY ["modules/duplicati/", "modules/duplicati/"]
@@ -28,14 +27,11 @@ COPY ["GeminiAdapter/", "GeminiAdapter/"]
 COPY ["ClaudeAdapter/", "ClaudeAdapter/"]
 COPY ["ChatGPTAdapter/", "ChatGPTAdapter/"]
 COPY ["OllamaAdapter/", "OllamaAdapter/"]
+# Invalidate docker build caching to pick up code changes for UnstructuredAdapter and Handlers
+RUN echo "Cache break 5"
 COPY ["UnstructuredAdapter/", "UnstructuredAdapter/"]
 COPY ["MarkItDownAdapter/", "MarkItDownAdapter/"]
-COPY ["QdrantAdapter/", "QdrantAdapter/"]
-COPY ["ChromaAdapter/", "ChromaAdapter/"]
-
-# Build and publish the Indexer
-WORKDIR "/src/Indexer"
-RUN dotnet publish "DuplicatiIndexer.csproj" -c Release -o /app/publish /p:UseAppHost=false
+COPY ["SurrealAdapter/", "SurrealAdapter/"]
 
 # Build and publish the Duplicati CommandLine (duplicati-cli)
 WORKDIR "/src/modules/duplicati/Executables/Duplicati.CommandLine"
@@ -45,9 +41,21 @@ RUN dotnet publish "Duplicati.CommandLine.csproj" -c Release -o /app/duplicati-c
 WORKDIR "/src/modules/duplicati/Executables/Duplicati.CommandLine.BackendTool"
 RUN dotnet publish "Duplicati.CommandLine.BackendTool.csproj" -c Release -o /app/duplicati-backend-tool /p:UseAppHost=true
 
+# Build and publish the Indexer
+WORKDIR "/src/Indexer"
+RUN dotnet publish "DuplicatiIndexer.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+# Install Python3, pip, and markitdown early to heavily leverage Docker layer caching
+RUN rm -rf /var/lib/apt/lists/* && \
+    apt-get clean && \
+    apt-get update -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated python3 python3-pip && \
+    pip3 install markitdown --break-system-packages && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 COPY --from=build /app/duplicati-cli /app/duplicati-cli
 COPY --from=build /app/duplicati-backend-tool /app/duplicati-backend-tool
@@ -58,12 +66,6 @@ RUN ln -s /app/duplicati-cli/Duplicati.CommandLine /usr/local/bin/duplicati-cli 
 
 # Copy Python tools
 COPY ["tools/", "/app/tools/"]
-
-# Install Python3, pip, and markitdown
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip && \
-    pip3 install markitdown --break-system-packages && \
-    rm -rf /var/lib/apt/lists/*
 
 # Create directory for SQLite database
 RUN mkdir -p /app/data

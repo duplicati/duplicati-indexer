@@ -5,13 +5,20 @@ using Duplicati.Library.Interface;
 using Duplicati.Library.Main;
 using Duplicati.Library.Main.Volumes;
 using DuplicatiIndexer.Data.Entities;
-using Marten;
+using DuplicatiIndexer.Data;
+using Microsoft.Extensions.Logging;
+using SharpCompress.Archives.Zip;
+using Wolverine;
 
 namespace DuplicatiIndexer.Services;
 
 /// <summary>
 /// Result of processing a dlist file.
 /// </summary>
+public class CountResult {
+    public int count { get; set; }
+}
+
 public class DlistProcessingResult
 {
     /// <summary>
@@ -43,6 +50,11 @@ public class DlistProcessingResult
     /// Gets or sets the error message if processing failed.
     /// </summary>
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// Optional limit on the number of files to process organically bypassing evaluation structures.
+    /// </summary>
+    public int? MaxFileCount { get; set; }
 }
 
 /// <summary>
@@ -50,18 +62,36 @@ public class DlistProcessingResult
 /// </summary>
 public class DlistProcessor
 {
-    private readonly IDocumentSession _session;
+    private static Guid CreateDeterministicGuid(string input)
+    {
+        using (var md5 = System.Security.Cryptography.MD5.Create())
+        {
+            var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
+            return new Guid(hash);
+        }
+    }
+    private readonly ISurrealRepository _repository;
+    private readonly IMessageBus _bus;
     private readonly ILogger<DlistProcessor> _logger;
+    private readonly DbStatsLiveMonitor _statsLiveMonitor;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlistProcessor"/> class.
     /// </summary>
-    /// <param name="session">The Marten document session.</param>
+    /// <param name="repository">The surreal repository.</param>
+    /// <param name="bus">The message bus.</param>
     /// <param name="logger">The logger.</param>
-    public DlistProcessor(IDocumentSession session, ILogger<DlistProcessor> logger)
+    /// <param name="statsLiveMonitor">The live stats monitor.</param>
+    public DlistProcessor(
+        ISurrealRepository repository,
+        IMessageBus bus,
+        ILogger<DlistProcessor> logger,
+        DbStatsLiveMonitor statsLiveMonitor)
     {
-        _session = session;
+        _repository = repository;
+        _bus = bus;
         _logger = logger;
+        _statsLiveMonitor = statsLiveMonitor;
     }
 
     /// <summary>
@@ -71,9 +101,10 @@ public class DlistProcessor
     /// <param name="version">The backup version timestamp extracted from the dlist filename.</param>
     /// <param name="dlistFilePath">The path to the dlist file.</param>
     /// <param name="passphrase">The encryption passphrase, if the file is encrypted.</param>
+    /// <param name="maxFileCount">Optional maximum number of files to process.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A result containing information about the processing operation.</returns>
-    public async Task<DlistProcessingResult> ProcessDlistAsync(string backupId, DateTimeOffset version, string dlistFilePath, string? passphrase, CancellationToken cancellationToken = default)
+    public async Task<DlistProcessingResult> ProcessDlistAsync(string backupId, DateTimeOffset version, string dlistFilePath, string? passphrase, int? maxFileCount = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
         _logger.LogInformation("Processing dlist file {DlistFilePath} for backup {BackupId} version {Version}", dlistFilePath, backupId, version);
@@ -125,8 +156,9 @@ public class DlistProcessor
             using var zip = new FileArchiveZip(fileStream, ArchiveMode.Read, new Dictionary<string, string?>());
             using var reader = new FilesetVolumeReader(zip, options);
 
-            var backupSource = await _session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId, cancellationToken);
+            var backupSource = await _repository.QueryScalarAsync<BackupSource>(
+                "SELECT * FROM backupsource WHERE DuplicatiBackupId = $id",
+                new Dictionary<string, object> { { "id", backupId } }, cancellationToken);
             if (backupSource == null)
             {
                 throw new InvalidOperationException(
@@ -136,97 +168,98 @@ public class DlistProcessor
 
             backupSourceId = backupSource.Id;
 
-            const int batchSize = 1000;
+            const int batchSize = 5000;
             var fileEntryBatch = new List<BackupFileEntry>();
             var versionFileBatch = new List<BackupVersionFile>();
             long totalEntriesLong = 0;
-            long skippedEntries = 0;
 
-            // Collect all file keys from the dlist to check for duplicates
-            var dlistFiles = reader.Files
-                .Where(f => f.Type == FilelistEntryType.File)
-                .Select(f => new { f.Path, f.Hash, f.Size, f.Time })
-                .ToList();
-
-            // Build file keys for batch existence checks
-            var fileKeysToCheck = dlistFiles
-                .Select(f => $"{f.Path}|{f.Hash}")
-                .ToList();
-
-            // Check existence in batches using a more efficient query
-            var existingFileKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            const int checkBatchSize = 500;
-
-            for (int i = 0; i < fileKeysToCheck.Count; i += checkBatchSize)
+            // Natively count idempotently persisted items for immediate cursor pagination
+            var existingCountResult = await _repository.QueryAsync<CountResult>(
+                "SELECT count() FROM backupfileentry WHERE BackupSourceId = $id GROUP ALL",
+                new Dictionary<string, object> { { "id", backupSourceId } },
+                cancellationToken);
+            
+            var existingCount = existingCountResult.FirstOrDefault()?.count ?? 0;
+            
+            if (existingCount > 0)
             {
-                var batchKeys = fileKeysToCheck.Skip(i).Take(checkBatchSize).ToList();
-                var batchPaths = dlistFiles.Skip(i).Take(checkBatchSize).Select(f => f.Path).ToList();
+                _logger.LogInformation("Cursor pagination active: Skipping {ExistingCount} previously checkpointed files out of the data stream...", existingCount);
+                _statsLiveMonitor.InitializeBaselineOnce(existingCount, existingCount);
+            }
 
-                // Query only for files with matching paths in this batch
-                var existingBatch = await _session.Query<BackupFileEntry>()
-                    .Where(f => f.BackupSourceId == backupSource.Id
-                                && f.VersionDeleted == null
-                                && batchPaths.Contains(f.Path))
-                    .Select(f => new { f.Path, f.Hash })
-                    .ToListAsync(cancellationToken);
+            // Collect all file keys from the dlist stream and aggressively skip to our cursor
+            var dlistFilesQuery = reader.Files
+                .Where(f => f.Type == FilelistEntryType.File)
+                .Skip(existingCount)
+                .Select(f => new { f.Path, f.Hash, f.Size, f.Time });
 
-                foreach (var existing in existingBatch)
-                {
-                    existingFileKeys.Add($"{existing.Path}|{existing.Hash}");
-                }
+            if (maxFileCount.HasValue)
+            {
+                // Take only the remaining files to satisfy the limit relative to total structure
+                var remaining = maxFileCount.Value - existingCount;
+                if (remaining < 0) remaining = 0;
+                dlistFilesQuery = dlistFilesQuery.Take(remaining);
+            }
+
+            var dlistFiles = dlistFilesQuery.ToList();
+
+            var localSeenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var localSeenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (dlistFiles.Count == 0 && existingCount > 0)
+            {
+                _logger.LogInformation("Cursor perfectly aligns with stream boundary. Entire Dlist was already processed natively.");
+            }
+            else
+            {
+                _logger.LogInformation("Synthesizing deterministic structural IDs and mathematically upserting signatures to SurrealDB index...");
             }
 
             foreach (var file in dlistFiles)
             {
-                var fileKey = $"{file.Path}|{file.Hash}";
-
-                // Always record the file presence in this backup version
-                versionFileBatch.Add(new BackupVersionFile
+                if (localSeenPaths.Add(file.Path))
                 {
-                    Id = Guid.NewGuid(),
-                    BackupSourceId = backupSource.Id,
-                    Version = version,
-                    Path = file.Path,
-                    Hash = file.Hash,
-                    Size = file.Size,
-                    LastModified = file.Time.ToUniversalTime(),
-                    RecordedAt = DateTimeOffset.UtcNow
-                });
-
-                // For BackupFileEntry, skip if this exact file (same path and hash) already exists
-                if (existingFileKeys.Contains(fileKey))
-                {
-                    skippedEntries++;
+                    versionFileBatch.Add(new BackupVersionFile
+                    {
+                        Id = CreateDeterministicGuid($"{backupSource.Id}|{version.UtcDateTime:O}|{file.Path}"),
+                        BackupSourceId = backupSource.Id,
+                        Version = version.UtcDateTime,
+                        Path = file.Path,
+                        Hash = file.Hash,
+                        Size = file.Size,
+                        LastModified = file.Time.ToUniversalTime(),
+                        RecordedAt = DateTime.UtcNow
+                    });
                 }
-                else
+
+                var fileKey = $"{file.Path}|{file.Hash}";
+                if (localSeenKeys.Add(fileKey))
                 {
                     fileEntryBatch.Add(new BackupFileEntry
                     {
-                        Id = Guid.NewGuid(),
+                        Id = CreateDeterministicGuid($"{backupSource.Id}|{file.Path}|{file.Hash}"),
                         BackupSourceId = backupSource.Id,
-                        VersionAdded = version,
+                        VersionAdded = version.UtcDateTime,
                         Path = file.Path,
                         Hash = file.Hash,
                         Size = file.Size,
                         LastModified = file.Time.ToUniversalTime()
                     });
-
-                    // Add to tracking set to avoid duplicates within the same batch
-                    existingFileKeys.Add(fileKey);
                 }
 
-                // Save batches when they reach the size limit
+                // Save batches natively utilizing internal DB layer pipeline chunking
                 if (fileEntryBatch.Count >= batchSize)
                 {
-                    _session.StoreObjects(fileEntryBatch);
+                    await _repository.StoreManyAsync(fileEntryBatch, cancellationToken);
+                    _statsLiveMonitor.IncrementMetadata(fileEntryBatch.Count);
                     totalEntriesLong += fileEntryBatch.Count;
                     fileEntryBatch.Clear();
                 }
 
                 if (versionFileBatch.Count >= batchSize)
                 {
-                    _session.StoreObjects(versionFileBatch);
-                    await _session.SaveChangesAsync(cancellationToken);
+                    await _repository.StoreManyAsync(versionFileBatch, cancellationToken);
+                    _statsLiveMonitor.IncrementVersionFile(versionFileBatch.Count);
                     versionFileBatch.Clear();
                 }
             }
@@ -234,25 +267,20 @@ public class DlistProcessor
             // Insert remaining entries
             if (fileEntryBatch.Count > 0)
             {
-                _session.StoreObjects(fileEntryBatch);
+                await _repository.StoreManyAsync(fileEntryBatch, cancellationToken);
+                _statsLiveMonitor.IncrementMetadata(fileEntryBatch.Count);
                 totalEntriesLong += fileEntryBatch.Count;
             }
 
             if (versionFileBatch.Count > 0)
             {
-                _session.StoreObjects(versionFileBatch);
+                await _repository.StoreManyAsync(versionFileBatch, cancellationToken);
+                _statsLiveMonitor.IncrementVersionFile(versionFileBatch.Count);
             }
 
-            // Save any remaining changes
-            await _session.SaveChangesAsync(cancellationToken);
+            totalEntries = (int)totalEntriesLong + existingCount;
+            _logger.LogInformation("Successfully completed deterministic metadata UPSERT block! Total elements evaluated natively: {Count}", totalEntries);
 
-            totalEntries = (int)totalEntriesLong;
-
-            if (skippedEntries > 0)
-            {
-                _logger.LogInformation("Skipped {SkippedCount} duplicate file entries in {DlistFilePath} (stored in BackupVersionFile)",
-                    skippedEntries, dlistFilePath);
-            }
 
             _logger.LogInformation("Found {Count} file entries in {DlistFilePath}", totalEntries, dlistFilePath);
 
@@ -262,8 +290,7 @@ public class DlistProcessor
                 backupSource.LastParsedVersion = version;
             }
 
-            _session.Store(backupSource);
-            await _session.SaveChangesAsync(cancellationToken);
+            await _repository.StoreAsync(backupSource, cancellationToken);
             _logger.LogInformation("Successfully processed dlist file {DlistFilePath}", dlistFilePath);
 
             return new DlistProcessingResult
@@ -272,7 +299,8 @@ public class DlistProcessor
                 BackupId = backupId,
                 BackupSourceId = backupSourceId,
                 Version = version,
-                NewFilesAdded = totalEntries
+                NewFilesAdded = totalEntries,
+                MaxFileCount = maxFileCount
             };
         }
         catch (Exception ex)

@@ -9,8 +9,7 @@
     <Project Path="OllamaAdapter/OllamaAdapter.csproj" />
     <Project Path="UnstructuredAdapter/UnstructuredAdapter.csproj" />
     <Project Path="MarkItDownAdapter/MarkItDownAdapter.csproj" />
-    <Project Path="QdrantAdapter/QdrantAdapter.csproj" />
-    <Project Path="ChromaAdapter/ChromaAdapter.csproj" />
+    <Project Path="SurrealAdapter/SurrealAdapter.csproj" />
   </Folder>
   <Folder Name="/Indexer/">
     <Project Path="Indexer/DuplicatiIndexer.csproj" />

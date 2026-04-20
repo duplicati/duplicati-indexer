@@ -1,16 +1,20 @@
 using DuplicatiIndexer.AdapterInterfaces;
-using DuplicatiIndexer.Data.Entities;
 using DuplicatiIndexer.Messages;
-using Marten;
+using Wolverine;
 using Wolverine.Attributes;
-
+using Microsoft.Extensions.Logging;
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using DuplicatiIndexer.Data.Entities;
+using DuplicatiIndexer.Data;
+using DuplicatiIndexer.Services;
+using DuplicatiIndexer.Configuration;
 namespace DuplicatiIndexer.Handlers;
 
-/// <summary>
-/// Handler for processing ExtractTextAndIndex messages.
-/// Extracts text from restored files using Unstructured and indexes them into the vector database.
-/// </summary>
-[MessageTimeout(5 * 60)] // 5 minutes timeout for embedding operations
 public class ExtractTextAndIndexHandler
 {
     private readonly IContentIndexer _contentIndexer;
@@ -18,345 +22,142 @@ public class ExtractTextAndIndexHandler
     private readonly IVectorStore _vectorStore;
     private readonly ISparseIndex _sparseIndex;
     private readonly ITextChunker _textChunker;
-    private readonly IDocumentSession _session;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<ExtractTextAndIndexHandler> _logger;
+    private readonly DbStatsLiveMonitor _statsLiveMonitor;
+    private readonly bool _isIncrementalRun;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ExtractTextAndIndexHandler"/> class.
-    /// </summary>
-    /// <param name="contentIndexer">The content indexer for text extraction.</param>
-    /// <param name="embeddingService">The embedding service for generating embeddings.</param>
-    /// <param name="vectorStore">The vector store for storing embeddings.</param>
-    /// <param name="sparseIndex">The sparse index for full-text search.</param>
-    /// <param name="textChunker">The text chunker for splitting large texts.</param>
-    /// <param name="session">The Marten document session.</param>
-    /// <param name="logger">The logger.</param>
     public ExtractTextAndIndexHandler(
         IContentIndexer contentIndexer,
         IEmbeddingService embeddingService,
         IVectorStore vectorStore,
         ISparseIndex sparseIndex,
         ITextChunker textChunker,
-        IDocumentSession session,
-        ILogger<ExtractTextAndIndexHandler> logger)
+        ISurrealRepository repository,
+        ILogger<ExtractTextAndIndexHandler> logger,
+        DbStatsLiveMonitor statsLiveMonitor,
+        EnvironmentConfig environmentConfig)
     {
         _contentIndexer = contentIndexer;
         _embeddingService = embeddingService;
         _vectorStore = vectorStore;
         _sparseIndex = sparseIndex;
         _textChunker = textChunker;
-        _session = session;
+        _repository = repository;
         _logger = logger;
+        _statsLiveMonitor = statsLiveMonitor;
+        _isIncrementalRun = environmentConfig.Indexing.IsIncrementalRun;
     }
 
-    /// <summary>
-    /// Handles an ExtractTextAndIndex message by extracting text and indexing it into the vector database.
-    /// </summary>
-    /// <param name="message">The ExtractTextAndIndex message.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
     [WolverineHandler]
-    public async Task Handle(ExtractTextAndIndex message, CancellationToken cancellationToken)
+    public async Task Handle(ExtractTextAndIndex[] messages, CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Received ExtractTextAndIndex message for BackupId: {BackupId}, FileEntryId: {FileEntryId}, Path: {OriginalFilePath}",
-            message.BackupId, message.FileEntryId, message.OriginalFilePath);
+        _logger.LogInformation("Processing batch of {Count} text extraction and index messages natively natively", messages.Length);
+
+        var extractedFiles = new List<(BackupFileEntry Entry, IReadOnlyList<TextChunk> Chunks, string RestoredPath)>();
+
+        foreach (var message in messages)
+        {
+            try
+            {
+                if (!File.Exists(message.RestoredFilePath)) continue;
+
+                BackupFileEntry? fileEntry = null;
+                if (message.FileEntryId.HasValue && message.FileEntryId.Value != Guid.Empty)
+                    fileEntry = await _repository.GetAsync<BackupFileEntry>(message.FileEntryId.Value, cancellationToken);
+                else
+                {
+                    var fileEntries = await _repository.QueryAsync<BackupFileEntry>(
+                        "SELECT * FROM backupfileentry WHERE BackupSourceId = $backupSourceId AND Path = $originalFilePath LIMIT 1",
+                        new Dictionary<string, object> { { "backupSourceId", message.BackupSourceId }, { "originalFilePath", message.OriginalFilePath } }, cancellationToken);
+                    fileEntry = fileEntries.FirstOrDefault();
+                }
+
+                if (fileEntry == null) continue;
+
+                string extractedText = await _contentIndexer.ExtractTextAsync(message.RestoredFilePath, cancellationToken);
+                
+                if (string.IsNullOrWhiteSpace(extractedText))
+                {
+                    await UpdateIndexingStatusAsync(fileEntry, FileIndexingStatus.NoContent, null, cancellationToken);
+                    File.Delete(message.RestoredFilePath);
+                    continue;
+                }
+
+                var chunks = await _textChunker.ChunkTextAsync(extractedText, cancellationToken);
+                _statsLiveMonitor.IncrementExtractedChunk(chunks.Count);
+
+                extractedFiles.Add((fileEntry, chunks, message.RestoredFilePath));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to prep file {Path}", message.OriginalFilePath);
+                try { File.Delete(message.RestoredFilePath); } catch { }
+            }
+        }
+
+        if (!extractedFiles.Any()) return;
+
+        var allChunks = new List<(Guid FileId, int Index, string Content)>();
+        foreach (var file in extractedFiles)
+            foreach (var chunk in file.Chunks)
+                allChunks.Add((file.Entry.Id, chunk.Index, chunk.Content));
+
+        if (!allChunks.Any()) return;
 
         try
         {
-            // Verify the file exists
-            if (!File.Exists(message.RestoredFilePath))
-            {
-                _logger.LogError(
-                    "Restored file not found at {RestoredFilePath} for FileEntryId: {FileEntryId}",
-                    message.RestoredFilePath, message.FileEntryId);
-                throw new FileNotFoundException(
-                    "Restored file not found", message.RestoredFilePath);
+            var texts = allChunks.Select(c => c.Content).ToList();
+            var embeddings = await _embeddingService.GenerateEmbeddingsAsync(texts, cancellationToken);
+
+            var finalVectorList = new List<(Guid FileId, int Index, string Content, float[] Vector)>();
+            for(int i=0; i < allChunks.Count; i++) {
+                finalVectorList.Add((allChunks[i].FileId, allChunks[i].Index, allChunks[i].Content, embeddings[i]));
             }
 
-            // Get the file entry from database to verify it exists
-            var fileEntry = await _session.LoadAsync<BackupFileEntry>(message.FileEntryId, cancellationToken);
-            if (fileEntry == null)
+            if (finalVectorList.Any())
+                await _vectorStore.EnsureCollectionExistsAsync(finalVectorList.First().Vector.Length, cancellationToken);
+            await _sparseIndex.EnsureIndexExistsAsync(cancellationToken);
+
+            var vectorTask = _vectorStore.UpsertCrossFileChunkVectorsBatchAsync(finalVectorList, cancellationToken);
+            var sparseTask = _sparseIndex.IndexCrossFileChunksBatchAsync(allChunks, cancellationToken);
+            await Task.WhenAll(vectorTask, sparseTask);
+
+            _statsLiveMonitor.IncrementVector(finalVectorList.Count);
+            _statsLiveMonitor.IncrementSparse(allChunks.Count);
+
+            foreach (var file in extractedFiles)
             {
-                _logger.LogError(
-                    "FileEntry not found in database for FileEntryId: {FileEntryId}",
-                    message.FileEntryId);
-                throw new InvalidOperationException(
-                    $"FileEntry not found for FileEntryId: {message.FileEntryId}");
-            }
-
-            _logger.LogInformation(
-                "Extracting text from {RestoredFilePath} using Unstructured",
-                message.RestoredFilePath);
-
-            // Step 1: Extract text using Unstructured
-            string extractedText;
-            try
-            {
-                extractedText = await _contentIndexer.ExtractTextAsync(
-                    message.RestoredFilePath, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to extract text from {RestoredFilePath} for FileEntryId: {FileEntryId}",
-                    message.RestoredFilePath, message.FileEntryId);
-                // Mark as failed but don't re-throw to allow other files to be processed
-                await UpdateIndexingStatusAsync(fileEntry, FileIndexingStatus.Failed, ex.Message, cancellationToken);
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(extractedText))
-            {
-                _logger.LogWarning(
-                    "No text extracted from {RestoredFilePath} for FileEntryId: {FileEntryId}. Skipping vector indexing.",
-                    message.RestoredFilePath, message.FileEntryId);
-                await UpdateIndexingStatusAsync(fileEntry, FileIndexingStatus.NoContent, null, cancellationToken);
-                return;
-            }
-
-            _logger.LogInformation(
-                "Extracted {TextLength} characters from {RestoredFilePath}. Chunking text (max chunk size: {MaxChunkSize})...",
-                extractedText.Length, message.RestoredFilePath, _textChunker.MaxChunkSize);
-
-            // Step 2: Chunk the text
-            IReadOnlyList<TextChunk> chunks;
-            try
-            {
-                chunks = await _textChunker.ChunkTextAsync(extractedText, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to chunk text for FileEntryId: {FileEntryId}",
-                    message.FileEntryId);
-                await UpdateIndexingStatusAsync(fileEntry, FileIndexingStatus.Failed, ex.Message, cancellationToken);
-                return;
-            }
-
-            _logger.LogInformation(
-                "Text split into {ChunkCount} chunks for FileEntryId: {FileEntryId}. Generating embeddings...",
-                chunks.Count, message.FileEntryId);
-
-            // Step 3: Delete old chunks for this file before storing new ones (both vector and sparse)
-            try
-            {
-                await _vectorStore.DeleteFileChunksAsync(message.FileEntryId, cancellationToken);
-                await _sparseIndex.DeleteFileContentAsync(message.FileEntryId, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to delete old chunks for FileEntryId: {FileEntryId}. Continuing with upsert...",
-                    message.FileEntryId);
-            }
-
-            // Step 4: Generate embeddings and store chunks (both vector and sparse)
-            // Both indexes must succeed for a chunk to be considered successfully indexed
-            var embeddingDimension = 0;
-            var successfulChunks = 0;
-            var failedChunks = 0;
-
-            for (int i = 0; i < chunks.Count; i++)
-            {
-                var chunk = chunks[i];
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // Track if both indexing operations succeed for this chunk
-                bool vectorIndexed = false;
-                bool sparseIndexed = false;
-                Exception? vectorException = null;
-                Exception? sparseException = null;
-
-                // Generate embedding for this chunk (required for vector indexing)
-                float[]? embedding = null;
-                try
-                {
-                    embedding = await _embeddingService.GenerateEmbeddingAsync(chunk.Content, cancellationToken);
-                    embeddingDimension = embedding.Length;
-
-                    // Ensure collection exists on first successful embedding
-                    if (i == 0)
-                    {
-                        await _vectorStore.EnsureCollectionExistsAsync(embedding.Length, cancellationToken);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "Failed to generate embedding for chunk {ChunkIndex}/{TotalChunks} for FileEntryId: {FileEntryId}",
-                        chunk.Index + 1, chunk.TotalChunks, message.FileEntryId);
-                    failedChunks++;
-                    continue; // Skip to next chunk if we can't even generate the embedding
-                }
-
-                // Vector indexing
-                try
-                {
-                    await _vectorStore.UpsertChunkVectorAsync(
-                        message.FileEntryId,
-                        chunk.Index,
-                        chunk.Content,
-                        embedding!,
-                        cancellationToken);
-
-                    vectorIndexed = true;
-                }
-                catch (Exception ex)
-                {
-                    vectorException = ex;
-                    _logger.LogError(ex,
-                        "Failed to store vector chunk {ChunkIndex}/{TotalChunks} for FileEntryId: {FileEntryId}",
-                        chunk.Index + 1, chunk.TotalChunks, message.FileEntryId);
-                }
-
-                // Sparse indexing (full-text)
-                try
-                {
-                    await _sparseIndex.IndexChunkAsync(
-                        message.FileEntryId,
-                        chunk.Index,
-                        chunk.Content,
-                        cancellationToken);
-
-                    sparseIndexed = true;
-                }
-                catch (Exception ex)
-                {
-                    sparseException = ex;
-                    _logger.LogError(ex,
-                        "Failed to store sparse chunk {ChunkIndex}/{TotalChunks} for FileEntryId: {FileEntryId}",
-                        chunk.Index + 1, chunk.TotalChunks, message.FileEntryId);
-                }
-
-                // Only count as successful if BOTH indexes succeeded
-                if (vectorIndexed && sparseIndexed)
-                {
-                    successfulChunks++;
-                    _logger.LogDebug(
-                        "Successfully indexed chunk {ChunkIndex}/{TotalChunks} (vector + sparse) for FileEntryId: {FileEntryId}",
-                        chunk.Index + 1, chunk.TotalChunks, message.FileEntryId);
-                }
-                else
-                {
-                    failedChunks++;
-
-                    // Attempt to clean up partial index to maintain consistency
-                    try
-                    {
-                        if (vectorIndexed && !sparseIndexed)
-                        {
-                            // Vector succeeded but sparse failed - clean up vector
-                            _logger.LogWarning(
-                                "Vector indexed but sparse failed for chunk {ChunkIndex}. Attempting cleanup...",
-                                chunk.Index);
-                            // Note: Vector store doesn't have chunk-level delete,
-                            // but the file-level delete at the start of re-indexing will handle this
-                        }
-                        else if (!vectorIndexed && sparseIndexed)
-                        {
-                            // Sparse succeeded but vector failed - clean up sparse
-                            _logger.LogWarning(
-                                "Sparse indexed but vector failed for chunk {ChunkIndex}. Attempting cleanup...",
-                                chunk.Index);
-                            // We can't easily delete a single chunk, but the file-level delete
-                            // at the start of re-indexing will handle cleanup on retry
-                        }
-                    }
-                    catch (Exception cleanupEx)
-                    {
-                        _logger.LogWarning(cleanupEx,
-                            "Failed to clean up partial index for chunk {ChunkIndex}", chunk.Index);
-                    }
-                }
-            }
-
-            // Check if at least some chunks were successfully processed
-            if (successfulChunks == 0)
-            {
-                var errorMessage = failedChunks > 0
-                    ? $"All {failedChunks} chunks failed to index"
-                    : "All chunks failed to process";
-                _logger.LogError(
-                    "Failed to index any chunks for FileEntryId: {FileEntryId} ({FailedChunks} failed)",
-                    message.FileEntryId, failedChunks);
-                await UpdateIndexingStatusAsync(fileEntry, FileIndexingStatus.Failed, errorMessage, cancellationToken);
-                return;
-            }
-
-            // Log warning if some chunks failed (partial success)
-            if (failedChunks > 0)
-            {
-                _logger.LogWarning(
-                    "Partial indexing for FileEntryId: {FileEntryId} - {SuccessfulChunks}/{TotalChunks} chunks succeeded, {FailedChunks} failed",
-                    message.FileEntryId, successfulChunks, chunks.Count, failedChunks);
-            }
-
-            _logger.LogInformation(
-                "Successfully indexed {SuccessfulChunks}/{TotalChunks} chunks (embedding dimension: {EmbeddingDimension}) for FileEntryId: {FileEntryId}",
-                successfulChunks, chunks.Count, embeddingDimension, message.FileEntryId);
-
-            // Step 5: Update the file entry status
-            await UpdateIndexingStatusAsync(fileEntry, FileIndexingStatus.Indexed, null, cancellationToken);
-
-            _logger.LogInformation(
-                "Successfully indexed FileEntryId: {FileEntryId}, Path: {OriginalFilePath} into vector database",
-                message.FileEntryId, message.OriginalFilePath);
-
-            // Clean up the restored file after successful indexing
-            try
-            {
-                File.Delete(message.RestoredFilePath);
-                _logger.LogDebug(
-                    "Cleaned up restored file: {RestoredFilePath}",
-                    message.RestoredFilePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to clean up restored file: {RestoredFilePath}",
-                    message.RestoredFilePath);
+                await UpdateIndexingStatusAsync(file.Entry, FileIndexingStatus.Indexed, null, cancellationToken);
+                File.Delete(file.RestoredPath);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Error processing ExtractTextAndIndex message for FileEntryId: {FileEntryId}, Path: {OriginalFilePath}",
-                message.FileEntryId, message.OriginalFilePath);
-            throw;
+            _logger.LogError(ex, "Failed to execute massive batch matrix inference loop array.");
         }
     }
 
-    /// <summary>
-    /// Updates the indexing status of a file entry.
-    /// </summary>
-    private async Task UpdateIndexingStatusAsync(
-        BackupFileEntry fileEntry,
-        FileIndexingStatus status,
-        string? errorMessage,
-        CancellationToken cancellationToken)
+    private async Task UpdateIndexingStatusAsync(BackupFileEntry fileEntry, FileIndexingStatus status, string? errorMessage, CancellationToken cancellationToken)
     {
         fileEntry.IndexingStatus = status;
-        fileEntry.LastIndexingAttempt = DateTimeOffset.UtcNow;
+        fileEntry.LastIndexingAttempt = DateTime.UtcNow;
         fileEntry.IndexingErrorMessage = errorMessage;
-
-        _session.Store(fileEntry);
 
         try
         {
-            await _session.SaveChangesAsync(cancellationToken);
+            await _repository.QueryAsync<object>(
+                "UPDATE type::thing('backupfileentry', $id) SET IndexingStatus = $status, LastIndexingAttempt = $timestamp, IndexingErrorMessage = $errorMessage",
+                new Dictionary<string, object>
+                {
+                    { "id", fileEntry.Id }, { "status", (int)status },
+                    { "timestamp", DateTime.UtcNow.ToString("o") }, { "errorMessage", errorMessage ?? "" }
+                }, cancellationToken);
+            _statsLiveMonitor.IncrementIndexedFile(1);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            // If the token is already canceled, try saving without cancellation
-            // to ensure the error status is persisted
-            _logger.LogDebug(
-                "Cancellation token was triggered, saving status update without cancellation token");
-            await _session.SaveChangesAsync(CancellationToken.None);
+            _logger.LogError(ex, "Failed status update.");
         }
-
-        _logger.LogDebug(
-            "Updated indexing status for FileEntryId: {FileEntryId} to {Status}",
-            fileEntry.Id, status);
     }
 }

@@ -3,10 +3,11 @@ using DuplicatiIndexer.Data;
 using DuplicatiIndexer.Data.Entities;
 using DuplicatiIndexer.Services;
 using FluentAssertions;
-using Marten;
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
+using SurrealDb.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Testcontainers.PostgreSql;
 using Xunit.Abstractions;
 
 namespace Indexer.Tests;
@@ -16,19 +17,19 @@ namespace Indexer.Tests;
 /// </summary>
 public class DlistProcessorTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgresContainer;
+    private readonly IContainer _surrealContainer;
     private readonly ITestOutputHelper _output;
     private ServiceProvider _serviceProvider = null!;
-    private IDocumentStore _documentStore = null!;
+    private ISurrealRepository _repository = null!;
 
     public DlistProcessorTests(ITestOutputHelper output)
     {
         _output = output;
-        _postgresContainer = new PostgreSqlBuilder()
-            .WithDatabase("indexer_test")
-            .WithUsername("postgres")
-            .WithPassword("testpassword")
-            .WithImage("postgres:16-alpine")
+        _surrealContainer = new ContainerBuilder()
+            .WithImage("surrealdb/surrealdb:latest")
+            .WithPortBinding(8000, true)
+            .WithCommand("start", "memory", "-A", "--auth", "--user", "root", "--pass", "root")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8000))
             .Build();
     }
 
@@ -37,8 +38,10 @@ public class DlistProcessorTests : IAsyncLifetime
     /// </summary>
     public async Task InitializeAsync()
     {
-        await _postgresContainer.StartAsync();
-        _output.WriteLine($"PostgreSQL container started with connection string: {_postgresContainer.GetConnectionString()}");
+        await _surrealContainer.StartAsync();
+        var port = _surrealContainer.GetMappedPublicPort(8000);
+        var url = $"http://127.0.0.1:{port}/sql";
+        _output.WriteLine($"SurrealDB container started at: {url}");
 
         // Setup DI container with test configuration
         var services = new ServiceCollection();
@@ -46,14 +49,16 @@ public class DlistProcessorTests : IAsyncLifetime
         // Configure logging
         services.AddLogging(builder => builder.AddXUnit(_output));
 
-        // Configure Marten with test PostgreSQL
-        services.AddMarten(options =>
-        {
-            MartenConfiguration.Configure(options, _postgresContainer.GetConnectionString());
-        }).UseLightweightSessions();
+        // Configure SurrealDB
+        services.AddSurreal(url);
+        services.AddScoped<ISurrealRepository, SurrealRepository>();
 
         _serviceProvider = services.BuildServiceProvider();
-        _documentStore = _serviceProvider.GetRequiredService<IDocumentStore>();
+        _repository = _serviceProvider.GetRequiredService<ISurrealRepository>();
+        
+        var client = _serviceProvider.GetRequiredService<ISurrealDbClient>();
+        await client.SignIn(new SurrealDb.Net.Models.Auth.RootAuth { Username = "root", Password = "root" });
+        await client.Use("test", "test");
     }
 
     /// <summary>
@@ -66,25 +71,16 @@ public class DlistProcessorTests : IAsyncLifetime
             await _serviceProvider.DisposeAsync();
         }
 
-        await _postgresContainer.DisposeAsync();
+        await _surrealContainer.DisposeAsync();
     }
 
     /// <summary>
     /// Creates a new IDocumentSession for database operations.
     /// </summary>
-    private IDocumentSession CreateSession()
-    {
-        return _documentStore.LightweightSession();
-    }
-
-    /// <summary>
-    /// Creates a DlistProcessor instance with a new session.
-    /// </summary>
     private DlistProcessor CreateProcessor()
     {
-        var session = CreateSession();
         var logger = _serviceProvider.GetRequiredService<ILogger<DlistProcessor>>();
-        return new DlistProcessor(session, logger);
+        return new DlistProcessor(_repository, logger);
     }
 
     /// <summary>
@@ -92,7 +88,6 @@ public class DlistProcessorTests : IAsyncLifetime
     /// </summary>
     private async Task<BackupSource> CreateTestBackupSource(string backupId, string? targetUrl = null)
     {
-        using var session = CreateSession();
         var backupSource = new BackupSource
         {
             Id = Guid.NewGuid(),
@@ -101,8 +96,7 @@ public class DlistProcessorTests : IAsyncLifetime
             CreatedAt = DateTimeOffset.UtcNow,
             TargetUrl = targetUrl ?? $"file://{Path.GetTempPath()}/backups"
         };
-        session.Store(backupSource);
-        await session.SaveChangesAsync();
+        await _repository.StoreAsync(backupSource);
         return backupSource;
     }
 
@@ -234,15 +228,11 @@ public class DlistProcessorTests : IAsyncLifetime
             await processor.ProcessDlistAsync(backupId, version, dlistFile, null);
 
             // Assert - Verify BackupFileEntries were created
-            using var session = CreateSession();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                        var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
             backupSource.Should().NotBeNull();
 
-            var fileEntries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var fileEntries = await _repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             fileEntries.Should().HaveCount(3);
             fileEntries.Should().Contain(f => f.Path == "/documents/report.pdf" && f.Size == 1024);
@@ -294,24 +284,18 @@ public class DlistProcessorTests : IAsyncLifetime
                 await processor2.ProcessDlistAsync(backupId, version2, dlistFile2, null);
 
                 // Assert - Verify only the changed file appears as new
-                using var session = CreateSession();
-                var backupSource = await session.Query<BackupSource>()
-                    .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                                var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
                 backupSource.Should().NotBeNull();
                 backupSource!.LastParsedVersion.Should().Be(version2);
 
-                var allEntries = await session.Query<BackupFileEntry>()
-                    .Where(f => f.BackupSourceId == backupSource.Id)
-                    .ToListAsync();
+                var allEntries = await _repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource.Id });
 
                 // Should have 3 entries total (2 from v1, 1 new from v2 - 1 duplicate skipped)
                 allEntries.Should().HaveCount(3);
 
                 // Verify BackupVersionFile entries - should have all 4 (2 from v1 + 2 from v2)
-                var versionFiles = await session.Query<BackupVersionFile>()
-                    .Where(f => f.BackupSourceId == backupSource.Id)
-                    .ToListAsync();
+                var versionFiles = await _repository.QueryAsync<BackupVersionFile>("SELECT * FROM BackupVersionFile WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource.Id });
 
                 versionFiles.Should().HaveCount(4);
                 versionFiles.Should().Contain(f => f.Path == "/stable/file.txt" && f.Version == version1);
@@ -364,9 +348,7 @@ public class DlistProcessorTests : IAsyncLifetime
                 await processor2.ProcessDlistAsync(backupId, version2, dlistFile2, null);
 
                 // Assert
-                using var session = CreateSession();
-                var backupSource = await session.Query<BackupSource>()
-                    .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                                var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
                 backupSource.Should().NotBeNull();
                 backupSource!.LastParsedVersion.Should().Be(version2);
@@ -408,13 +390,9 @@ public class DlistProcessorTests : IAsyncLifetime
             await processor.ProcessDlistAsync(backupId, version, dlistFile, null);
 
             // Assert
-            using var session = CreateSession();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                        var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
-            var fileEntries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var fileEntries = await _repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             fileEntries.Should().OnlyContain(f => f.IsIndexed == false);
         }
@@ -445,15 +423,11 @@ public class DlistProcessorTests : IAsyncLifetime
             await processor.ProcessDlistAsync(backupId, version, dlistFile, null);
 
             // Assert
-            using var session = CreateSession();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                        var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
             backupSource.Should().NotBeNull();
 
-            var fileEntries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var fileEntries = await _repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             fileEntries.Should().BeEmpty();
         }
@@ -491,15 +465,11 @@ public class DlistProcessorTests : IAsyncLifetime
             await processor.ProcessDlistAsync(backupId, version, dlistFile, null);
 
             // Assert
-            using var session = CreateSession();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                        var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
             backupSource.Should().NotBeNull();
 
-            var fileEntries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var fileEntries = await _repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             fileEntries.Should().HaveCount(2500);
         }
@@ -534,12 +504,9 @@ public class DlistProcessorTests : IAsyncLifetime
             await processor.ProcessDlistAsync(backupId, version, dlistFile, null);
 
             // Assert
-            using var session = CreateSession();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                        var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
-            var fileEntry = await session.Query<BackupFileEntry>()
-                .FirstOrDefaultAsync(f => f.BackupSourceId == backupSource!.Id);
+            var fileEntry = await _repository.QueryScalarAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             fileEntry.Should().NotBeNull();
             fileEntry!.Path.Should().Be("/data/important.doc");
@@ -582,15 +549,11 @@ public class DlistProcessorTests : IAsyncLifetime
             await processor.ProcessDlistAsync(backupId, version, dlistFile, null);
 
             // Assert - Verify BackupVersionFile entries were created
-            using var session = CreateSession();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                        var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
             backupSource.Should().NotBeNull();
 
-            var versionFiles = await session.Query<BackupVersionFile>()
-                .Where(f => f.BackupSourceId == backupSource!.Id && f.Version == version)
-                .ToListAsync();
+            var versionFiles = await _repository.QueryAsync<BackupVersionFile>("SELECT * FROM BackupVersionFile WHERE BackupSourceId = $id AND Version = $version", new Dictionary<string, object> { ["id"] = backupSource!.Id, ["version"] = version });
 
             versionFiles.Should().HaveCount(3);
             versionFiles.Should().Contain(f => f.Path == "/documents/report.pdf" && f.Hash == "hash_report" && f.Size == 1024);
@@ -641,14 +604,9 @@ public class DlistProcessorTests : IAsyncLifetime
                 await processor2.ProcessDlistAsync(backupId, version2, dlistFile2, null);
 
                 // Assert - Query version history for the file
-                using var session = CreateSession();
-                var backupSource = await session.Query<BackupSource>()
-                    .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+                                var backupSource = await _repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
-                var fileHistory = await session.Query<BackupVersionFile>()
-                    .Where(f => f.BackupSourceId == backupSource!.Id && f.Path == "/tracked/file.txt")
-                    .OrderBy(f => f.Version)
-                    .ToListAsync();
+                var fileHistory = (await _repository.QueryAsync<BackupVersionFile>("SELECT * FROM BackupVersionFile WHERE BackupSourceId = $id AND Path = $path", new Dictionary<string, object> { ["id"] = backupSource!.Id, ["path"] = "/tracked/file.txt" })).OrderBy(f => f.Version).ToList();
 
                 // Should have 2 entries (one for each version)
                 fileHistory.Should().HaveCount(2);

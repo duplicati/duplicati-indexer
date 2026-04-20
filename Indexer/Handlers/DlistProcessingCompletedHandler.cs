@@ -1,7 +1,7 @@
 using DuplicatiIndexer.Data.Entities;
 using DuplicatiIndexer.Messages;
 using DuplicatiIndexer.Services;
-using Marten;
+using DuplicatiIndexer.Data;
 using Wolverine;
 using Wolverine.Attributes;
 
@@ -14,22 +14,22 @@ namespace DuplicatiIndexer.Handlers;
 public class DlistProcessingCompletedHandler
 {
     private readonly FilenameFilterService _filenameFilterService;
-    private readonly IDocumentSession _session;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<DlistProcessingCompletedHandler> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlistProcessingCompletedHandler"/> class.
     /// </summary>
     /// <param name="filenameFilterService">The filename filter service.</param>
-    /// <param name="session">The Marten document session.</param>
+    /// <param name="repository">The Marten document session.</param>
     /// <param name="logger">The logger.</param>
     public DlistProcessingCompletedHandler(
         FilenameFilterService filenameFilterService,
-        IDocumentSession session,
+        ISurrealRepository repository,
         ILogger<DlistProcessingCompletedHandler> logger)
     {
         _filenameFilterService = filenameFilterService;
-        _session = session;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -53,6 +53,7 @@ public class DlistProcessingCompletedHandler
             var filesToIndex = await _filenameFilterService.GetFilesNeedingIndexingAsync(
                 message.BackupSourceId,
                 message.Version,
+                message.MaxFileCount,
                 cancellationToken);
 
             if (filesToIndex.Count == 0)
@@ -64,8 +65,7 @@ public class DlistProcessingCompletedHandler
             }
 
             // Get backup source configuration for restoration
-            var backupSource = await _session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.Id == message.BackupSourceId, cancellationToken);
+            var backupSource = await _repository.GetAsync<BackupSource>(message.BackupSourceId, cancellationToken);
 
             if (backupSource == null)
             {
@@ -85,17 +85,25 @@ public class DlistProcessingCompletedHandler
                 filesToIndex.Count, tempDir);
 
             // Extract file paths from the file entries
-            var filePaths = filesToIndex.Select(f => f.Path).ToList();
+            var filePaths = filesToIndex;
 
-            // Publish message to start file restoration
-            await bus.PublishAsync(new StartFileRestoration
+            // Publish message to start file restoration in horizontal batches
+            const int BatchSize = 1000;
+            var batches = filePaths.Chunk(BatchSize).ToList();
+            
+            _logger.LogInformation("Distributing {FileCount} offline extraction keys natively across {BatchCount} horizontally scaled Wolverine workers.", filePaths.Count, batches.Count);
+
+            foreach (var batch in batches)
             {
-                BackupId = message.BackupId,
-                BackupSourceId = message.BackupSourceId,
-                Version = message.Version,
-                FilePaths = filePaths,
-                TargetDirectory = tempDir
-            });
+                await bus.PublishAsync(new StartFileRestoration
+                {
+                    BackupId = message.BackupId,
+                    BackupSourceId = message.BackupSourceId,
+                    Version = message.Version,
+                    FilePaths = batch.ToList(),
+                    TargetDirectory = tempDir
+                });
+            }
 
             _logger.LogInformation(
                 "Published StartFileRestoration message for BackupId: {BackupId}, Version: {Version}, Files: {FileCount}",

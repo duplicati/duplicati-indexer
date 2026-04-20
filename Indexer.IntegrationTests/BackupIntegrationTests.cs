@@ -4,10 +4,9 @@ using DuplicatiIndexer.Services;
 using FluentAssertions;
 using Indexer.IntegrationTests.Fixtures;
 using Indexer.IntegrationTests.Helpers;
-using Marten;
+using SurrealDb.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Qdrant.Client;
 using Xunit.Abstractions;
 
 namespace Indexer.IntegrationTests;
@@ -18,18 +17,16 @@ namespace Indexer.IntegrationTests;
 [Collection("IntegrationTests")]
 public class BackupIntegrationTests : IDisposable
 {
-    private readonly PostgreSqlFixture _postgresFixture;
-    private readonly QdrantFixture _qdrantFixture;
-    private readonly ITestOutputHelper _output;
+    private readonly SurrealDbFixture _surrealDbFixture;
+        private readonly ITestOutputHelper _output;
     private readonly DuplicatiCliHelper _duplicatiCli;
     private readonly string _testDirectory;
     private readonly string _backupDirectory;
     private readonly ServiceProvider _serviceProvider;
 
-    public BackupIntegrationTests(PostgreSqlFixture postgresFixture, QdrantFixture qdrantFixture, ITestOutputHelper output)
+    public BackupIntegrationTests(SurrealDbFixture surrealDbFixture, ITestOutputHelper output)
     {
-        _postgresFixture = postgresFixture;
-        _qdrantFixture = qdrantFixture;
+        _surrealDbFixture = surrealDbFixture;
         _output = output;
         _duplicatiCli = new DuplicatiCliHelper(output);
 
@@ -48,19 +45,15 @@ public class BackupIntegrationTests : IDisposable
         // Configure logging
         services.AddLogging(builder => builder.AddXUnit(output));
 
-        // Configure Marten with test PostgreSQL
-        services.AddMarten(options =>
-        {
-            MartenConfiguration.Configure(options, _postgresFixture.ConnectionString);
-        }).UseLightweightSessions();
-
-        // Configure Qdrant
-        services.AddSingleton<QdrantClient>(sp =>
-        {
-            var uri = _qdrantFixture.Endpoint 
-                ?? throw new InvalidOperationException("Qdrant endpoint not available");
-            return new QdrantClient(uri.Host, uri.Port);
-        });
+        // Configure SurrealDB
+        services.AddSurreal(_surrealDbFixture.ConnectionUrl);
+        services.AddScoped<ISurrealRepository, SurrealRepository>();
+        
+        // Initialize logic for sign-in
+        var baseProvider = services.BuildServiceProvider();
+        var client = baseProvider.GetRequiredService<ISurrealDbClient>();
+        client.SignIn(new SurrealDb.Net.Models.Auth.RootAuth { Username = "root", Password = "root" }).GetAwaiter().GetResult();
+        client.Use("test", "test").GetAwaiter().GetResult();
 
         // Register services
         services.AddScoped<DlistProcessor>();
@@ -93,7 +86,7 @@ public class BackupIntegrationTests : IDisposable
     private async Task<BackupSource> CreateTestBackupSource(string backupId, string targetUrl, string? encryptionPassword = null)
     {
         using var scope = _serviceProvider.CreateScope();
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
 
         var backupSource = new BackupSource
         {
@@ -105,8 +98,7 @@ public class BackupIntegrationTests : IDisposable
             EncryptionPassword = encryptionPassword
         };
 
-        session.Store(backupSource);
-        await session.SaveChangesAsync();
+        await repository.StoreAsync(backupSource);
 
         _output.WriteLine($"Created BackupSource: {backupSource.Id} for backupId: {backupId}");
         return backupSource;
@@ -163,16 +155,13 @@ public class BackupIntegrationTests : IDisposable
             await processor.ProcessDlistAsync(backupId, version1, dlistFile1, passphrase);
 
             // Verify files were stored in database
-            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+            var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
+            var backupSource = await repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
             backupSource.Should().NotBeNull();
             backupSource!.LastParsedVersion.Should().Be(version1);
 
-            var fileEntries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource.Id)
-                .ToListAsync();
+            var fileEntries = await repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             fileEntries.Should().HaveCount(3);
             fileEntries.Should().Contain(f => f.Path.Contains("document1.txt"));
@@ -210,9 +199,8 @@ public class BackupIntegrationTests : IDisposable
             await processor.ProcessDlistAsync(backupId, version2, dlistFile2, passphrase);
 
             // Verify backup source updated
-            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+            var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
+            var backupSource = await repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
             backupSource.Should().NotBeNull();
             backupSource!.LastParsedVersion.Should().Be(version2);
@@ -224,17 +212,14 @@ public class BackupIntegrationTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var diffCalculator = scope.ServiceProvider.GetRequiredService<DiffCalculator>();
-            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
 
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == "integration-test-backup");
+            var backupSource = await repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = 'integration-test-backup'");
 
             backupSource.Should().NotBeNull();
 
             // Query all file entries for this backup source
-            var entries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var entries = await repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             _output.WriteLine("Calculating diff between versions...");
             var changedFiles = diffCalculator.CalculateDiff(
@@ -257,13 +242,10 @@ public class BackupIntegrationTests : IDisposable
         // Verify all file entries in database
         using (var scope = _serviceProvider.CreateScope())
         {
-            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == "integration-test-backup");
+            var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
+            var backupSource = await repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = 'integration-test-backup'");
 
-            var allEntries = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var allEntries = await repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
 
             _output.WriteLine($"\nAll file entries in database: {allEntries.Count}");
             foreach (var entry in allEntries.OrderBy(e => e.Path))
@@ -318,18 +300,15 @@ public class BackupIntegrationTests : IDisposable
         await processor.ProcessDlistAsync(backupId, version, dlistFile, passphrase);
 
         // Assert
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-        var backupSource = await session.Query<BackupSource>()
-            .FirstOrDefaultAsync(b => b.DuplicatiBackupId == backupId);
+        var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
+        var backupSource = await repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = $id", new Dictionary<string, object> { ["id"] = backupId });
 
         backupSource.Should().NotBeNull();
 
-        var fileEntries = await session.Query<BackupFileEntry>()
-            .Where(f => f.BackupSourceId == backupSource!.Id)
-            .ToListAsync();
+        var fileEntries = (await repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id })).ToList();
 
         fileEntries.Should().HaveCount(1);
-        fileEntries[0].Path.Should().Contain("secret.txt");
+        fileEntries.First().Path.Should().Contain("secret.txt");
 
         _output.WriteLine($"Successfully processed encrypted backup with {fileEntries.Count} files");
     }
@@ -407,18 +386,15 @@ public class BackupIntegrationTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var diffCalculator = scope.ServiceProvider.GetRequiredService<DiffCalculator>();
-            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var repository = scope.ServiceProvider.GetRequiredService<ISurrealRepository>();
 
-            var backupSource = await session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == "multi-version-test");
+            var backupSource = await repository.QueryScalarAsync<BackupSource>("SELECT * FROM BackupSource WHERE DuplicatiBackupId = 'multi-version-test'");
 
             backupSource.Should().NotBeNull();
 
             // Diff v1 -> v2
             _output.WriteLine("\nCalculating diff v1 -> v2...");
-            var entriesV1V2 = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource!.Id)
-                .ToListAsync();
+            var entriesV1V2 = await repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource!.Id });
             var diffV1V2 = diffCalculator.CalculateDiff(entriesV1V2, backupSource!.Id, version1, version2);
             _output.WriteLine($"Changes v1->v2: {diffV1V2.Count} files");
             foreach (var f in diffV1V2)
@@ -431,9 +407,7 @@ public class BackupIntegrationTests : IDisposable
 
             // Diff v2 -> v3
             _output.WriteLine("\nCalculating diff v2 -> v3...");
-            var entriesV2V3 = await session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == backupSource.Id)
-                .ToListAsync();
+            var entriesV2V3 = await repository.QueryAsync<BackupFileEntry>("SELECT * FROM BackupFileEntry WHERE BackupSourceId = $id", new Dictionary<string, object> { ["id"] = backupSource.Id });
             var diffV2V3 = diffCalculator.CalculateDiff(entriesV2V3, backupSource.Id, version2, version3);
             _output.WriteLine($"Changes v2->v3: {diffV2V3.Count} files");
             foreach (var f in diffV2V3)

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using DuplicatiIndexer.Data.Entities;
 using DuplicatiIndexer.Messages;
 using DuplicatiIndexer.Services;
-using Marten;
+using DuplicatiIndexer.Data;
 using Wolverine;
 using Wolverine.Attributes;
 
@@ -16,7 +16,7 @@ public class BackupVersionCreatedHandler
 {
     private readonly DlistProcessor _dlistProcessor;
     private readonly BackendToolService _backendToolService;
-    private readonly IDocumentSession _session;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<BackupVersionCreatedHandler> _logger;
 
     // Regex to extract timestamp from dlist filename: duplicati-YYYYMMDDTHHMMSSZ.dlist.zip[.aes]
@@ -29,17 +29,17 @@ public class BackupVersionCreatedHandler
     /// </summary>
     /// <param name="dlistProcessor">The dlist processor.</param>
     /// <param name="backendToolService">The backend tool service for downloading files.</param>
-    /// <param name="session">The Marten document session.</param>
+    /// <param name="repository">The Marten document session.</param>
     /// <param name="logger">The logger.</param>
     public BackupVersionCreatedHandler(
         DlistProcessor dlistProcessor,
         BackendToolService backendToolService,
-        IDocumentSession session,
+        ISurrealRepository repository,
         ILogger<BackupVersionCreatedHandler> logger)
     {
         _dlistProcessor = dlistProcessor;
         _backendToolService = backendToolService;
-        _session = session;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -98,8 +98,10 @@ public class BackupVersionCreatedHandler
             _logger.LogInformation("Extracted version {Version} from dlist filename", version);
 
             // Lookup the backup source to get passphrase and target URL
-            var backupSource = await _session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.DuplicatiBackupId == message.BackupId, cancellationToken);
+            var backupSource = await _repository.QueryScalarAsync<BackupSource>(
+                "SELECT * FROM backupsource WHERE DuplicatiBackupId = $id",
+                new Dictionary<string, object> { { "id", message.BackupId } },
+                cancellationToken);
 
             if (backupSource == null)
             {
@@ -138,6 +140,7 @@ public class BackupVersionCreatedHandler
                 version,
                 tempDlistPath,
                 backupSource.EncryptionPassword,
+                message.MaxFileCount,
                 cancellationToken
             );
 
@@ -146,25 +149,18 @@ public class BackupVersionCreatedHandler
                 _logger.LogInformation("Successfully processed BackupVersionCreated message for BackupId: {BackupId}, Version: {Version}. New files added: {NewFiles}",
                     message.BackupId, version, result.NewFilesAdded);
 
-                // Publish message to trigger filename filtering for new files
-                if (result.NewFilesAdded > 0)
+                // Always organically publish the completed pipeline token so Phase 2 can mathematically evaluate unindexed items left natively from previous crashes
+                await bus.PublishAsync(new DlistProcessingCompleted
                 {
-                    await bus.PublishAsync(new DlistProcessingCompleted
-                    {
-                        BackupId = result.BackupId,
-                        BackupSourceId = result.BackupSourceId,
-                        Version = result.Version,
-                        NewFilesAdded = result.NewFilesAdded
-                    });
+                    BackupId = result.BackupId,
+                    BackupSourceId = result.BackupSourceId,
+                    Version = result.Version,
+                    NewFilesAdded = result.NewFilesAdded,
+                    MaxFileCount = result.MaxFileCount
+                });
 
-                    _logger.LogInformation("Published DlistProcessingCompleted message for BackupId: {BackupId}, Version: {Version}",
-                        result.BackupId, result.Version);
-                }
-                else
-                {
-                    _logger.LogInformation("No new files added, skipping DlistProcessingCompleted message for BackupId: {BackupId}",
-                        message.BackupId);
-                }
+                _logger.LogInformation("Published DlistProcessingCompleted message for BackupId: {BackupId}, Version: {Version}",
+                    result.BackupId, result.Version);
             }
             else
             {

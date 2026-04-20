@@ -16,7 +16,7 @@ public interface IThreatStateMonitor
     /// <summary>
     /// Scans a batch of modified files for canary tripwires.
     /// </summary>
-    bool CheckForCanaryFiles(IEnumerable<BackupFileEntry> files);
+    bool CheckForCanaryFiles(IEnumerable<string> filePaths);
 
     /// <summary>
     /// Records an anomalous file event for a given backup source.

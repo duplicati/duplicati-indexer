@@ -9,49 +9,16 @@ using DuplicatiIndexer.GeminiAdapter;
 using DuplicatiIndexer.HealthChecks;
 using DuplicatiIndexer.Messages;
 using DuplicatiIndexer.OllamaAdapter;
-using DuplicatiIndexer.QdrantAdapter;
-using DuplicatiIndexer.ChromaAdapter;
 using DuplicatiIndexer.Services;
 using DuplicatiIndexer.Services.Security;
 using DuplicatiIndexer.UnstructuredAdapter;
 using DuplicatiIndexer.MarkItDownAdapter;
-using Marten;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Npgsql;
+using SurrealDb.Net;
+using Wolverine;
+using System.Text.Json;
+using Serilog;
 using Polly;
 using Polly.Extensions.Http;
-using Qdrant.Client;
-
-using Serilog;
-using Wolverine;
-using Wolverine.Postgresql;
-using System.Text.Json;
-
-static async Task EnsureIndexedContentTableAsync(string connectionString, Serilog.ILogger logger)
-{
-    try
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-
-        const string createTableSql = @"
-            CREATE TABLE IF NOT EXISTS indexed_content (
-                id UUID PRIMARY KEY,
-                data JSONB NOT NULL
-            );";
-
-        await using var command = new NpgsqlCommand(createTableSql, connection);
-        await command.ExecuteNonQueryAsync();
-
-        logger.Debug("Ensured indexed_content table exists");
-    }
-    catch (Exception ex)
-    {
-        logger.Error(ex, "Failed to ensure indexed_content table exists");
-        throw;
-    }
-}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -73,19 +40,13 @@ Log.Logger = new LoggerConfiguration()
 builder.Logging.ClearProviders();
 builder.Logging.AddSerilog();
 
-// Configure Marten document store (documents only, no Wolverine integration)
-var documentStoreConnectionString = !string.IsNullOrEmpty(environmentConfig.ConnectionStrings.DocumentStore)
-    ? environmentConfig.ConnectionStrings.DocumentStore
-    : throw new InvalidOperationException("DocumentStore connection string is not configured.");
+// Configure SurrealDB
+var surrealConnectionString = environmentConfig.ConnectionStrings.DocumentStore ?? "ws://localhost:8000/rpc";
 
-builder.Services.AddMarten(options =>
-{
-    MartenConfiguration.Configure(options, documentStoreConnectionString);
-}).UseLightweightSessions();
-// Note: Not using IntegrateWithWolverine() because we're using separate PostgreSQL message storage via PersistMessagesWithPostgresql()
-
-// Ensure indexed_content table exists for PostgreSqlSparseIndex (raw SQL operations bypass Marten's auto-creation)
-await EnsureIndexedContentTableAsync(documentStoreConnectionString, Log.Logger);
+builder.Services.AddSurreal(surrealConnectionString);
+builder.Services.AddScoped<ISurrealRepository, SurrealRepository>();
+builder.Services.AddSingleton<DbStatsLiveMonitor>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<DbStatsLiveMonitor>());
 
 // Register Services
 builder.Services.AddScoped<DlistProcessor>();
@@ -221,8 +182,6 @@ else
 // Register HttpClient for Ollama health check
 builder.Services.AddHttpClient<OllamaEmbeddingHealthCheck>();
 
-// Register HttpClient for Chroma health check
-builder.Services.AddHttpClient<ChromaHealthCheck>();
 
 // Register Content Indexer based on provider configuration
 var contentIndexerProvider = environmentConfig.Indexing.Provider.ToLowerInvariant();
@@ -243,33 +202,12 @@ else
     Log.Information("Using Unstructured content indexer at {BaseUrl}", environmentConfig.Unstructured.BaseUrl);
 }
 
-// Register Vector Store based on provider configuration
-var vectorStoreProvider = environmentConfig.VectorStore.Provider.ToLowerInvariant();
+// Register Vector Store
+builder.Services.AddScoped<IVectorStore, DuplicatiIndexer.SurrealAdapter.SurrealVectorStore>();
+Log.Information("Using SurrealDB for vector store");
 
-if (vectorStoreProvider == "chroma")
-{
-    builder.Services.AddHttpClient<ChromaVectorStore>();
-    builder.Services.AddScoped<IVectorStore, ChromaVectorStore>();
-    Log.Information("Using Chroma vector store at {Url}",
-        environmentConfig.ConnectionStrings.Chroma ?? "http://localhost:8000");
-}
-else
-{
-    builder.Services.AddSingleton<QdrantClient>(sp =>
-    {
-        var connectionString = !string.IsNullOrEmpty(environmentConfig.ConnectionStrings.Qdrant)
-            ? environmentConfig.ConnectionStrings.Qdrant
-            : "http://localhost:6333";
-        var uri = new Uri(connectionString);
-        return new QdrantClient(uri.Host, uri.Port);
-    });
-    builder.Services.AddScoped<IVectorStore, QdrantVectorStore>();
-    Log.Information("Using Qdrant vector store at {Url}",
-        environmentConfig.ConnectionStrings.Qdrant ?? "http://localhost:6333");
-}
-
-// Register Sparse Index (PostgreSQL full-text search)
-builder.Services.AddScoped<ISparseIndex, PostgreSqlSparseIndex>();
+// Register Sparse Index (SurrealDB full-text search)
+builder.Services.AddScoped<ISparseIndex, DuplicatiIndexer.SurrealAdapter.SurrealSparseIndex>();
 
 // Register Hybrid Search Service (combines vector and sparse search with RRF)
 builder.Services.AddScoped<IHybridSearchService, HybridSearchService>();
@@ -280,21 +218,15 @@ builder.Services.AddSingleton<ITokenizer, ApproximationTokenizer>();
 // Register Text Chunker
 builder.Services.AddSingleton<ITextChunker, SimpleTextChunker>();
 
-// Configure Wolverine with separate PostgreSQL message store
-var messageStoreConnectionString = !string.IsNullOrEmpty(environmentConfig.ConnectionStrings.MessageStore)
-    ? environmentConfig.ConnectionStrings.MessageStore
-    : throw new InvalidOperationException("MessageStore connection string is not configured.");
-
 builder.Host.UseWolverine(options =>
 {
-    // Configure PostgreSQL as the main message store
-    options.PersistMessagesWithPostgresql(messageStoreConnectionString);
+    options.Policies.UseDurableLocalQueues();
 
     // Ensure Wolverine creates its schema tables (wolverine.incoming_envelopes, etc.) on startup
     options.AutoBuildMessageStorageOnStartup = AutoCreate.CreateOrUpdate;
 
-    // Increase default execution timeout for embedding operations (5 minutes)
-    options.DefaultExecutionTimeout = TimeSpan.FromMinutes(5);
+    // Increase default execution timeout for embedding/massive metadata operations
+    options.DefaultExecutionTimeout = TimeSpan.FromHours(6);
 
     // Disable conventional discovery and explicitly include types
     options.Discovery.DisableConventionalDiscovery();
@@ -302,6 +234,19 @@ builder.Host.UseWolverine(options =>
     options.Discovery.IncludeType<DuplicatiIndexer.Handlers.DlistProcessingCompletedHandler>();
     options.Discovery.IncludeType<DuplicatiIndexer.Handlers.StartFileRestorationHandler>();
     options.Discovery.IncludeType<DuplicatiIndexer.Handlers.ExtractTextAndIndexHandler>();
+    // NATIVELY OVERRIDE PIPELINE SEQUENTIAL PROCESSING ORCHESTRATION TO AGGRESSIVELY SATURATE ALL 4 GPU NODES
+    options.LocalQueue("extract-text-and-index").MaximumParallelMessages(32); // Massive parallel streams to constantly flush payloads into the LMStudio round-robin!
+    options.BatchMessagesOf<DuplicatiIndexer.Messages.ExtractTextAndIndex>(batching =>
+    {
+        batching.BatchSize = 25;
+        batching.TriggerTime = TimeSpan.FromMilliseconds(200);
+        batching.LocalExecutionQueueName = "extract-text-and-index";
+    });
+    options.PublishMessage<DuplicatiIndexer.Messages.ExtractTextAndIndex>().ToLocalQueue("extract-text-and-index");
+    
+    // Scale Phase 2 File Restoration Workers horizontally (8 concurrent local extractions)
+    options.LocalQueue("start-file-restoration").MaximumParallelMessages(8);
+    options.PublishMessage<DuplicatiIndexer.Messages.StartFileRestoration>().ToLocalQueue("start-file-restoration");
 }, ExtensionDiscovery.ManualOnly);
 
 // Add Health Checks
@@ -316,32 +261,93 @@ if (contentIndexerProvider == "markitdown")
 }
 else
 {
+    // Default: Unstructured
+    builder.Services.AddHttpClient<UnstructuredHealthCheck>(client =>
+    {
+        client.BaseAddress = new Uri(environmentConfig.Unstructured.BaseUrl);
+    }).AddPolicyHandler(retryPolicy);
     healthChecks.AddCheck<UnstructuredHealthCheck>("unstructured");
 }
 
-if (vectorStoreProvider == "chroma")
-{
-    healthChecks.AddCheck<ChromaHealthCheck>("chroma");
-}
-else
-{
-    healthChecks.AddCheck<QdrantHealthCheck>("qdrant");
-}
+
 
 var app = builder.Build();
 
-// Ensure Marten database schema is created on startup
-using (var scope = app.Services.CreateScope())
-{
-    var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
-    Log.Information("Database schema verified/created successfully");
-}
+// Surrogate initialization for SurrealDB could go here
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var dbInit = scope.ServiceProvider.GetRequiredService<ISurrealDbClient>();
+            // Construct critical indices to collapse the O(N^2) duplication checks into O(1) hash lookups!
+            await dbInit.RawQuery(@"
+                DEFINE INDEX IF NOT EXISTS idx_backupfile_path ON backupfileentry FIELDS BackupSourceId, Path;
+                DEFINE INDEX IF NOT EXISTS idx_backupfile_deleted ON backupfileentry FIELDS VersionDeleted;
+                DEFINE INDEX IF NOT EXISTS idx_backupversionfile_path ON backupversionfile FIELDS BackupSourceId, Version, Path;
+                DEFINE INDEX IF NOT EXISTS idx_backupfile_filter ON backupfileentry FIELDS BackupSourceId, VersionAdded, IsIndexed, VersionDeleted;
+            ");
+            Log.Information("SurrealDB O(1) indices successfully seeded.");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Failed to asynchronously seed indices: {msg}", ex.Message);
+        }
+    });
+Log.Information("Using SurrealDB successfully");
 
 // Map health check endpoint
 app.MapHealthChecks("/health");
 
 // TODO: Add authentication and authorization to these endpoints
+
+app.MapGet("/api/stats/stream", async (HttpResponse response, DbStatsLiveMonitor monitor, CancellationToken cancellationToken) =>
+{
+    response.Headers.Append("Content-Type", "text/event-stream");
+    response.Headers.Append("Cache-Control", "no-cache");
+    response.Headers.Append("Connection", "keep-alive");
+
+    var channel = System.Threading.Channels.Channel.CreateBounded<bool>(new System.Threading.Channels.BoundedChannelOptions(1) { FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest });
+
+    Action trigger = () => channel.Writer.TryWrite(true);
+    monitor.OnStatsUpdated += trigger;
+
+    try
+    {
+        // Emit initial exact count organically
+        await SendStatsDataAsync(response, monitor);
+
+        // Await background trigger natively
+        await foreach (var _ in channel.Reader.ReadAllAsync(cancellationToken))
+        {
+            await SendStatsDataAsync(response, monitor);
+            // Lock max transmission push to 500ms bounds natively
+            await Task.Delay(500, cancellationToken);
+        }
+    }
+    catch (TaskCanceledException) { }
+    finally
+    {
+        monitor.OnStatsUpdated -= trigger;
+    }
+
+    static async Task SendStatsDataAsync(HttpResponse r, DbStatsLiveMonitor m)
+    {
+        var payload = JsonSerializer.Serialize(new { documentCount = m.VectorCount, sparseCount = m.SparseCount, metadataCount = m.MetadataCount, versionFileCount = m.VersionFileCount });
+        await r.WriteAsync($"data: {payload}\n\n");
+        await r.Body.FlushAsync();
+    }
+});
+
+app.MapGet("/api/stats", (DbStatsLiveMonitor monitor) => 
+    Results.Ok(new { 
+        metadataCount = monitor.MetadataCount, 
+        vectorCount = monitor.VectorCount, 
+        sparseCount = monitor.SparseCount, 
+        versionFileCount = monitor.VersionFileCount,
+        extractedChunkCount = monitor.ExtractedChunkCount,
+        indexedFileCount = monitor.IndexedFileCount
+    }));
 
 // API endpoint to inject a BackupVersionCreated message via Wolverine
 app.MapPost("/api/messages/backup-version-created", async (BackupVersionCreated message, IMessageBus bus) =>
@@ -365,8 +371,7 @@ app.MapPost("/api/messages/backup-version-created", async (BackupVersionCreated 
     });
 });
 
-// API endpoint to inject a BackupSource directly into Marten
-app.MapPost("/api/backup-sources", async (CreateBackupSourceRequest request, IDocumentSession session) =>
+app.MapPost("/api/backup-sources", async (CreateBackupSourceRequest request, ISurrealRepository repository) =>
 {
     if (string.IsNullOrWhiteSpace(request.Name))
         return Results.BadRequest(new { error = "Name is required" });
@@ -385,8 +390,7 @@ app.MapPost("/api/backup-sources", async (CreateBackupSourceRequest request, IDo
         TargetUrl = request.TargetUrl ?? string.Empty
     };
 
-    session.Store(backupSource);
-    await session.SaveChangesAsync();
+    await repository.StoreAsync(backupSource, default);
 
     Log.Information("Created BackupSource: Id={Id}, Name={Name}, DuplicatiBackupId={DuplicatiBackupId}",
         backupSource.Id, backupSource.Name, backupSource.DuplicatiBackupId);

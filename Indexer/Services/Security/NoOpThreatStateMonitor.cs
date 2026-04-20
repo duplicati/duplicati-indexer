@@ -10,7 +10,7 @@ public class NoOpThreatStateMonitor : IThreatStateMonitor
 {
     public bool IsEnabled => false;
 
-    public bool CheckForCanaryFiles(IEnumerable<BackupFileEntry> files)
+    public bool CheckForCanaryFiles(IEnumerable<string> filePaths)
     {
         return false;
     }

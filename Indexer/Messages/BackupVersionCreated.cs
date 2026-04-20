@@ -16,4 +16,10 @@ public record BackupVersionCreated
     /// The version timestamp is extracted from this filename.
     /// </summary>
     public required string DlistFilename { get; init; }
+
+    /// <summary>
+    /// Optional limit on the number of files to process from this backup version.
+    /// Mostly used for testing or partial ingestions.
+    /// </summary>
+    public int? MaxFileCount { get; init; }
 }

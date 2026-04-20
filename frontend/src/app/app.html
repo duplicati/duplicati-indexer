@@ -1,15 +1,17 @@
 <sh-sidenav [class]="sidenavType()" [(isOpen)]="isNavOpen" [disableDrag]="true">
   <div sidenav>
-    <header>
+    <header style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
       <app-logo />
 
-      <button shButton class="icon small" (click)="toggleBodyClass()">
-        @if (isDarkMode()) {
-          <sh-icon>sun</sh-icon>
-        } @else {
-          <sh-icon>moon</sh-icon>
-        }
-      </button>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button shButton class="icon small" (click)="toggleBodyClass()">
+          @if (isDarkMode()) {
+            <sh-icon>sun</sh-icon>
+          } @else {
+            <sh-icon>moon</sh-icon>
+          }
+        </button>
+      </div>
     </header>
 
     <sh-list class="primary">
@@ -36,6 +38,34 @@
 
     <sh-list class="base-1l primary">
       <sh-divider />
+
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; cursor: default; user-select: text; background: var(--sh-base-1l); border-radius: 8px;">
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin-bottom: 4px;">
+          <sh-icon>hard-drives</sh-icon>
+          Live Database Telemetry
+        </span>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+          <span style="color: var(--sh-text-secondary)">Metadata Parsed</span>
+          <sh-chip [color]="metadataCount() > 0 ? 'success' : 'default'" size="small" variant="flat">
+            {{ metadataCount() | number }}
+          </sh-chip>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+          <span style="color: var(--sh-text-secondary)">Vector Embeddings</span>
+          <sh-chip [color]="dbCount() > 0 ? 'primary' : 'default'" size="small" variant="flat">
+            {{ dbCount() | number }}
+          </sh-chip>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+          <span style="color: var(--sh-text-secondary)">Sparse Indexes</span>
+          <sh-chip [color]="sparseCount() > 0 ? 'primary' : 'default'" size="small" variant="flat">
+            {{ sparseCount() | number }}
+          </sh-chip>
+        </div>
+      </div>
 
       <a href="https://github.com/duplicati/duplicati" target="_blank" action>
         <sh-icon>info</sh-icon>

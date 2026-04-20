@@ -5,7 +5,7 @@
     "ng": "ng",
     "start": "npm run watch:font & ng serve",
     "build": "npm run gen:font & ng build",
-    "watch": "ng build --watch --configuration development",
+    "watch": "npm run watch:font & ng build --watch --configuration development",
     "gen:font": "ship-fg --src='./src' --out='./public' --rootPath='./'",
     "watch:font": "ship-fg --src='./src' --out='./public' --rootPath='./' --watch"
   },

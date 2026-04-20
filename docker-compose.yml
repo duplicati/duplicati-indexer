@@ -5,25 +5,18 @@ services:
       dockerfile: Indexer/Dockerfile
     container_name: duplicati-indexer
     depends_on:
-      postgres:
-        condition: service_healthy
+      surrealdb:
+        condition: service_started
       unstructured:
         condition: service_started
       ollama:
         condition: service_healthy
-      qdrant:
-        condition: service_started
-      chroma:
+      llamacpp-balancer:
         condition: service_started
     environment:
       - DOTNET_ENVIRONMENT=${DOTNET_ENVIRONMENT:-Production}
       - LOGGING__LOGLEVEL__DEFAULT=${LOG_LEVEL:-Information}
-      - CONNECTIONSTRINGS__DOCUMENTSTORE=Host=postgres;Port=5432;Database=duplicati_indexer;Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
-      - CONNECTIONSTRINGS__MESSAGESTORE=Host=postgres;Port=5432;Database=duplicati_indexer;Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
-      - CONNECTIONSTRINGS__QDRANT=http://qdrant:6334
-      - CONNECTIONSTRINGS__CHROMA=http://chroma:8000
-      - VECTORSTORE__PROVIDER=${VECTORSTORE_PROVIDER:-qdrant}
-      - VECTORSTORE__COLLECTIONNAME=${VECTORSTORE_COLLECTION:-backup_content}
+      - CONNECTIONSTRINGS__DOCUMENTSTORE=Server=http://surrealdb:8000;Namespace=test;Database=test;Username=root;Password=root
       - UNSTRUCTURED__BASEURL=http://unstructured:8000
       - OLLAMAEMBED__BASEURL=http://ollama:11434
       - OLLAMAEMBED__MODEL=${OLLAMAEMBED_MODEL:-nomic-embed-text}
@@ -45,13 +38,13 @@ services:
       - INDEXING__FILEEXTENSIONFILTER=!.,.txt
       - INDEXING__PROVIDER=${INDEXING_PROVIDER:-unstructured}
       - MARKITDOWN__EXECUTABLEPATH=${MARKITDOWN_EXECUTABLEPATH:-markitdown}
-      - CHUNKING__MAXCHUNKSIZE=${CHUNKING_MAX_SIZE:-1024}
+      - CHUNKING__MAXCHUNKSIZE=${CHUNKING_MAX_SIZE:-512}
       - CHUNKING__OVERLAPSIZE=${CHUNKING_OVERLAP:-50}
-      - CHUNKING__CHARSPERTOKEN=${CHUNKING_CHARS_PER_TOKEN:-4.0}
+      - CHUNKING__CHARSPERTOKEN=${CHUNKING_CHARS_PER_TOKEN:-1.5}
       - RAGQUERY__VERSION=${RAGQUERY_VERSION:-v2}
       - SECURITY__THREATMONITOR=${SECURITY_THREATMONITOR:-noop}
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - ./data/indexer:/app/data
       - ./testdata/backupdest:/backupdest
@@ -72,59 +65,16 @@ services:
       - "3000:4200"
     restart: unless-stopped
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: indexer-postgres
-    environment:
-      - POSTGRES_DB=duplicati_indexer
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: indexer-surrealdb
     ports:
-      - "5432:5432"
+      - "8000:8000"
+    command: start --user root --pass root --bind 0.0.0.0:8000 file:/data/surreal.db
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/surrealdb:/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d duplicati_indexer"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
 
-  qdrant:
-    image: qdrant/qdrant
-    container_name: indexer-qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - ./data/qdrant:/qdrant/storage
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  chroma:
-    image: chromadb/chroma:latest
-    container_name: indexer-chroma
-    ports:
-      - "8001:8000"
-    volumes:
-      - ./data/chroma:/chroma/chroma
-    environment:
-      - IS_PERSISTENT=TRUE
-      - CHROMA_SERVER_HOST=0.0.0.0
-      - CHROMA_SERVER_HTTP_PORT=8000
-      - CHROMA_SERVER_AUTH_PROVIDER=${CHROMA_AUTH_PROVIDER:-}
-      - CHROMA_SERVER_AUTH_CREDENTIALS=${CHROMA_AUTH_CREDENTIALS:-}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   unstructured:
     image: quay.io/unstructured-io/unstructured-api:latest
@@ -132,7 +82,7 @@ services:
     environment:
       - UNSTRUCTURED_MEMORY_FREE_MINIMUM_MB=100
     ports:
-      - "8000:8000"
+      - "8002:8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
@@ -143,6 +93,10 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: indexer-ollama
+    environment:
+      - OLLAMA_NUM_PARALLEL=10
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q4_0
     ports:
       - "11434:11434"
     volumes:
@@ -156,7 +110,14 @@ services:
       timeout: 30s
       retries: 10
       start_period: 120s
-
+  llamacpp-balancer:
+    image: nginx:alpine
+    container_name: indexer-llamacpp-balancer
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   # Local LLM service for chat models
   # Supports any model via local:<model> format in LLM_PROVIDER
   ollama-llm:

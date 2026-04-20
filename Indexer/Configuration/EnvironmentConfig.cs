@@ -113,17 +113,6 @@ public class EnvironmentConfig
         /// </summary>
         public string MessageStore { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Qdrant connection string.
-        /// Environment variable: CONNECTIONSTRINGS__QDRANT
-        /// </summary>
-        public string Qdrant { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Chroma connection string.
-        /// Environment variable: CONNECTIONSTRINGS__CHROMA
-        /// </summary>
-        public string Chroma { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -243,6 +232,12 @@ public class EnvironmentConfig
         /// Environment variable: INDEXING__PROVIDER
         /// </summary>
         public string Provider { get; set; } = "unstructured";
+
+        /// <summary>
+        /// Flag to enable incremental processing.
+        /// Environment variable: INDEXING__ISINCREMENTALRUN
+        /// </summary>
+        public bool IsIncrementalRun { get; set; } = false;
     }
 
     /// <summary>
@@ -252,10 +247,10 @@ public class EnvironmentConfig
     {
         /// <summary>
         /// Maximum chunk size in tokens. Text longer than this will be split into multiple chunks.
-        /// Default is 1024 tokens (safely under common 8192 token limits).
+        /// Default is 512 tokens to deeply respect restrictive local hardware matrix sizes and maximize vector similarity accuracy.
         /// Environment variable: CHUNKING__MAXCHUNKSIZE
         /// </summary>
-        public int MaxChunkSize { get; set; } = 1024;
+        public int MaxChunkSize { get; set; } = 512;
 
         /// <summary>
         /// Overlap size in tokens between consecutive chunks to maintain context.
@@ -265,10 +260,10 @@ public class EnvironmentConfig
 
         /// <summary>
         /// Approximate characters per token for token counting.
-        /// Default is 4.0, which is a good approximation for English text.
+        /// Default is 1.5, which strongly aligns with highly dense text structures like Enron metadata and HTML dumps.
         /// Environment variable: CHUNKING__CHARSPERTOKEN
         /// </summary>
-        public double CharsPerToken { get; set; } = 4.0;
+        public double CharsPerToken { get; set; } = 1.5;
     }
 
     /// <summary>

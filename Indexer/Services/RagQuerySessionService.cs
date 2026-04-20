@@ -1,5 +1,5 @@
 using DuplicatiIndexer.Data.Entities;
-using Marten;
+using DuplicatiIndexer.Data;
 
 namespace DuplicatiIndexer.Services;
 
@@ -9,19 +9,19 @@ namespace DuplicatiIndexer.Services;
 /// </summary>
 public class RagQuerySessionService
 {
-    private readonly IDocumentSession _documentSession;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<RagQuerySessionService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RagQuerySessionService"/> class.
     /// </summary>
-    /// <param name="documentSession">The Marten document session for database operations.</param>
+    /// <param name="repository">The Marten document session for database operations.</param>
     /// <param name="logger">The logger.</param>
     public RagQuerySessionService(
-        IDocumentSession documentSession,
+        ISurrealRepository repository,
         ILogger<RagQuerySessionService> logger)
     {
-        _documentSession = documentSession;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -37,13 +37,13 @@ public class RagQuerySessionService
         string title,
         CancellationToken cancellationToken = default)
     {
-        var session = await _documentSession.LoadAsync<QuerySession>(sessionId, cancellationToken);
+        var session = await _repository.GetAsync<QuerySession>(sessionId, cancellationToken);
 
         if (session != null)
         {
             // Update last activity timestamp
             session.LastActivityAt = DateTimeOffset.UtcNow;
-            _documentSession.Store(session);
+            await _repository.StoreAsync(session, cancellationToken);
             return (session, false);
         }
 
@@ -57,7 +57,7 @@ public class RagQuerySessionService
             LastActivityAt = queryTimestamp
         };
 
-        _documentSession.Store(session);
+        await _repository.StoreAsync(session, cancellationToken);
         _logger.LogInformation("Created new session {SessionId} with title: {Title}", sessionId, title);
 
         return (session, true);
@@ -96,8 +96,7 @@ public class RagQuerySessionService
             Events = events ?? new List<QueryHistoryEvent>()
         };
 
-        _documentSession.Store(historyItem);
-        await _documentSession.SaveChangesAsync(cancellationToken);
+        await _repository.StoreAsync(historyItem, cancellationToken);
 
         return historyItem;
     }
@@ -112,10 +111,9 @@ public class RagQuerySessionService
         Guid sessionId,
         CancellationToken cancellationToken = default)
     {
-        return await _documentSession.Query<QueryHistoryItem>()
-            .Where(h => h.SessionId == sessionId)
-            .OrderBy(h => h.QueryTimestamp)
-            .ToListAsync(cancellationToken);
+        var sql = "SELECT * FROM queryhistoryitem WHERE SessionId = $sessionId ORDER BY QueryTimestamp ASC";
+        var parameters = new Dictionary<string, object> { { "sessionId", sessionId } };
+        return await _repository.QueryAsync<QueryHistoryItem>(sql, parameters, cancellationToken);
     }
 
     /// <summary>
@@ -128,7 +126,7 @@ public class RagQuerySessionService
         Guid sessionId,
         CancellationToken cancellationToken = default)
     {
-        return await _documentSession.LoadAsync<QuerySession>(sessionId, cancellationToken);
+        return await _repository.GetAsync<QuerySession>(sessionId, cancellationToken);
     }
 
     /// <summary>
@@ -141,10 +139,9 @@ public class RagQuerySessionService
         Guid sessionId,
         CancellationToken cancellationToken = default)
     {
-        return await _documentSession.Query<QueryHistoryItem>()
-            .Where(h => h.SessionId == sessionId)
-            .OrderBy(h => h.QueryTimestamp)
-            .ToListAsync(cancellationToken);
+        var sql = "SELECT * FROM queryhistoryitem WHERE SessionId = $sessionId ORDER BY QueryTimestamp ASC";
+        var parameters = new Dictionary<string, object> { { "sessionId", sessionId } };
+        return await _repository.QueryAsync<QueryHistoryItem>(sql, parameters, cancellationToken);
     }
 
     /// <summary>
@@ -154,8 +151,7 @@ public class RagQuerySessionService
     /// <returns>A list of all query sessions.</returns>
     public async Task<IReadOnlyList<QuerySession>> GetAllSessionsAsync(CancellationToken cancellationToken = default)
     {
-        return await _documentSession.Query<QuerySession>()
-            .OrderByDescending(s => s.LastActivityAt)
-            .ToListAsync(cancellationToken);
+        var sql = "SELECT * FROM querysession ORDER BY LastActivityAt DESC";
+        return await _repository.QueryAsync<QuerySession>(sql, null, cancellationToken);
     }
 }

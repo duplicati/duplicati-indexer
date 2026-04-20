@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using DuplicatiIndexer.Data.Entities;
-using Marten;
+using DuplicatiIndexer.Data;
 
 namespace DuplicatiIndexer.Services;
 
@@ -99,12 +99,12 @@ public class FileVersionHistoryItem
 /// </summary>
 public class FileMetadataQueryService : IFileMetadataQueryService
 {
-    private readonly IDocumentSession _session;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<FileMetadataQueryService> _logger;
 
-    public FileMetadataQueryService(IDocumentSession session, ILogger<FileMetadataQueryService> logger)
+    public FileMetadataQueryService(ISurrealRepository repository, ILogger<FileMetadataQueryService> logger)
     {
-        _session = session;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -113,23 +113,20 @@ public class FileMetadataQueryService : IFileMetadataQueryService
     {
         _logger.LogInformation("Finding file with pattern '{PathPattern}'", pathPattern);
 
-        var query = _session.Query<BackupFileEntry>()
-            .Where(f => f.VersionDeleted == null);
+        var sql = "SELECT * FROM backupfileentry WHERE VersionDeleted = null";
+        var parameters = new Dictionary<string, object>();
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
-        // For wildcard patterns, we'll do client-side filtering after getting candidates
         IReadOnlyList<BackupFileEntry> candidates;
         if (pathPattern.Contains('*') || pathPattern.Contains('?'))
         {
-            // Get more candidates for client-side filtering
-            var candidateList = await query
-                .OrderByDescending(f => f.VersionAdded)
-                .Take(100)
-                .ToListAsync(cancellationToken);
+            sql += " ORDER BY VersionAdded DESC LIMIT 100";
+            var candidateList = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
 
             var regex = new Regex(WildcardToRegex(pathPattern), RegexOptions.IgnoreCase);
             candidates = candidateList.Where(f => regex.IsMatch(f.Path)).ToList();
@@ -137,11 +134,10 @@ public class FileMetadataQueryService : IFileMetadataQueryService
         else
         {
             // Exact match or ends-with match for file names
-            candidates = await query
-                .Where(f => f.Path == pathPattern || f.Path.EndsWith(pathPattern))
-                .OrderByDescending(f => f.VersionAdded)
-                .Take(1)
-                .ToListAsync(cancellationToken);
+            // Since EndsWith requires client-side or complex Surreal functions, pulling a batch and filtering
+            sql += " ORDER BY VersionAdded DESC LIMIT 1000";
+            var candidateList = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
+            candidates = candidateList.Where(f => f.Path == pathPattern || f.Path.EndsWith(pathPattern)).Take(1).ToList();
         }
 
         var entry = candidates.FirstOrDefault();
@@ -152,7 +148,7 @@ public class FileMetadataQueryService : IFileMetadataQueryService
             return null;
         }
 
-        var backupSource = await _session.LoadAsync<BackupSource>(entry.BackupSourceId, cancellationToken);
+        var backupSource = await _repository.GetAsync<BackupSource>(entry.BackupSourceId, cancellationToken);
 
         return MapToResult(entry, backupSource);
     }
@@ -162,18 +158,18 @@ public class FileMetadataQueryService : IFileMetadataQueryService
     {
         _logger.LogInformation("Getting version history for file '{Path}'", path);
 
-        var query = _session.Query<BackupFileEntry>()
-            .Where(f => f.Path == path);
+        var sql = "SELECT * FROM backupfileentry WHERE Path = $path";
+        var parameters = new Dictionary<string, object> { { "path", path } };
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
-        var entries = await query
-            .OrderByDescending(f => f.VersionAdded)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
+        sql += $" ORDER BY VersionAdded DESC LIMIT {limit}";
+
+        var entries = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
 
         return entries.Select(e => new FileVersionHistoryItem
         {
@@ -191,41 +187,38 @@ public class FileMetadataQueryService : IFileMetadataQueryService
     {
         _logger.LogInformation("Searching files with pattern '{NamePattern}'", namePattern);
 
-        var query = _session.Query<BackupFileEntry>()
-            .Where(f => f.VersionDeleted == null);
+        var sql = "SELECT * FROM backupfileentry WHERE VersionDeleted = null";
+        var parameters = new Dictionary<string, object>();
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
         IReadOnlyList<BackupFileEntry> entries;
 
-        // Support wildcard patterns with client-side filtering
         if (namePattern.Contains('*') || namePattern.Contains('?'))
         {
-            var entryList = await query
-                .OrderBy(f => f.Path)
-                .Take(limit * 2) // Get more for client-side filtering
-                .ToListAsync(cancellationToken);
+            sql += $" ORDER BY Path ASC LIMIT {limit * 2}";
+            var entryList = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
 
             var regex = new Regex(WildcardToRegex(namePattern), RegexOptions.IgnoreCase);
             entries = entryList.Where(f => regex.IsMatch(f.Path)).Take(limit).ToList();
         }
         else
         {
-            entries = await query
-                .Where(f => f.Path.Contains(namePattern, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(f => f.Path)
-                .Take(limit)
-                .ToListAsync(cancellationToken);
+            sql += $" ORDER BY Path ASC LIMIT 1000"; // Fetch more for client side filtering
+            var entryList = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
+            entries = entryList.Where(f => f.Path.Contains(namePattern, StringComparison.OrdinalIgnoreCase)).Take(limit).ToList();
         }
 
+        if (entries.Count == 0) return new List<FileMetadataResult>();
+
         var backupSourceIds = entries.Select(e => e.BackupSourceId).Distinct().ToList();
-        var backupSources = (await _session.Query<BackupSource>()
-            .Where(bs => bs.Id.IsOneOf(backupSourceIds))
-            .ToListAsync(cancellationToken))
-            .ToDictionary(bs => bs.Id);
+        var backupSourcesTask = backupSourceIds.Select(id => _repository.GetAsync<BackupSource>(id, cancellationToken));
+        var backupSourcesList = await Task.WhenAll(backupSourcesTask);
+        var backupSources = backupSourcesList.Where(bs => bs != null).ToDictionary(bs => bs!.Id);
 
         return entries.Select(e => MapToResult(e, backupSources.GetValueOrDefault(e.BackupSourceId))).ToList();
     }
@@ -241,33 +234,36 @@ public class FileMetadataQueryService : IFileMetadataQueryService
             directoryPath += "/";
         }
 
-        var query = _session.Query<BackupFileEntry>()
-            .Where(f => f.VersionDeleted == null);
+        var sql = "SELECT * FROM backupfileentry WHERE VersionDeleted = null";
+        var parameters = new Dictionary<string, object>();
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
+        // Fetch larger chunk to filter locally since prefix filtering requires specific SurrealQL logic
+        sql += " ORDER BY Path ASC LIMIT 5000";
+        var entryList = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
+        
+        IEnumerable<BackupFileEntry> filtered;
         if (includeSubdirectories)
         {
-            query = query.Where(f => f.Path.StartsWith(directoryPath));
+            filtered = entryList.Where(f => f.Path.StartsWith(directoryPath));
         }
         else
         {
-            // Match files directly in this directory (path starts with dir but has no additional slashes after dir)
-            query = query.Where(f => f.Path.StartsWith(directoryPath) && !f.Path.Substring(directoryPath.Length).Contains('/'));
+            filtered = entryList.Where(f => f.Path.StartsWith(directoryPath) && !f.Path.Substring(directoryPath.Length).Contains('/'));
         }
+        var entries = filtered.ToList();
 
-        var entries = await query
-            .OrderBy(f => f.Path)
-            .ToListAsync(cancellationToken);
+        if (entries.Count == 0) return new List<FileMetadataResult>();
 
         var backupSourceIds = entries.Select(e => e.BackupSourceId).Distinct().ToList();
-        var backupSources = (await _session.Query<BackupSource>()
-            .Where(bs => bs.Id.IsOneOf(backupSourceIds))
-            .ToListAsync(cancellationToken))
-            .ToDictionary(bs => bs.Id);
+        var backupSourcesTask = backupSourceIds.Select(id => _repository.GetAsync<BackupSource>(id, cancellationToken));
+        var backupSourcesList = await Task.WhenAll(backupSourcesTask);
+        var backupSources = backupSourcesList.Where(bs => bs != null).ToDictionary(bs => bs!.Id);
 
         return entries.Select(e => MapToResult(e, backupSources.GetValueOrDefault(e.BackupSourceId))).ToList();
     }
@@ -277,24 +273,28 @@ public class FileMetadataQueryService : IFileMetadataQueryService
     {
         _logger.LogInformation("Getting files modified between {StartDate} and {EndDate}", startDate, endDate);
 
-        var query = _session.Query<BackupFileEntry>()
-            .Where(f => f.VersionDeleted == null && f.LastModified >= startDate && f.LastModified <= endDate);
+        var sql = "SELECT * FROM backupfileentry WHERE VersionDeleted = null AND LastModified >= $startDate AND LastModified <= $endDate";
+        var parameters = new Dictionary<string, object>
+        {
+            { "startDate", startDate },
+            { "endDate", endDate }
+        };
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
-        var entries = await query
-            .OrderByDescending(f => f.LastModified)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
+        sql += $" ORDER BY LastModified DESC LIMIT {limit}";
+        var entries = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
+        
+        if (entries.Count == 0) return new List<FileMetadataResult>();
 
         var backupSourceIds = entries.Select(e => e.BackupSourceId).Distinct().ToList();
-        var backupSources = (await _session.Query<BackupSource>()
-            .Where(bs => bs.Id.IsOneOf(backupSourceIds))
-            .ToListAsync(cancellationToken))
-            .ToDictionary(bs => bs.Id);
+        var backupSourcesTask = backupSourceIds.Select(id => _repository.GetAsync<BackupSource>(id, cancellationToken));
+        var backupSourcesList = await Task.WhenAll(backupSourcesTask);
+        var backupSources = backupSourcesList.Where(bs => bs != null).ToDictionary(bs => bs!.Id);
 
         return entries.Select(e => MapToResult(e, backupSources.GetValueOrDefault(e.BackupSourceId))).ToList();
     }
@@ -304,18 +304,18 @@ public class FileMetadataQueryService : IFileMetadataQueryService
     {
         _logger.LogInformation("Getting complete version history for file '{Path}' from all backup versions", path);
 
-        var query = _session.Query<BackupVersionFile>()
-            .Where(f => f.Path == path);
+        var sql = "SELECT * FROM backupversionfile WHERE Path = $path";
+        var parameters = new Dictionary<string, object> { { "path", path } };
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
-        var entries = await query
-            .OrderByDescending(f => f.Version)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
+        sql += $" ORDER BY Version DESC LIMIT {limit}";
+
+        var entries = await _repository.QueryAsync<BackupVersionFile>(sql, parameters, cancellationToken);
 
         return entries.Select(e => new FileVersionInfo
         {
@@ -335,17 +335,18 @@ public class FileMetadataQueryService : IFileMetadataQueryService
     {
         _logger.LogInformation("Getting last modified info for file '{Path}'", path);
 
-        var query = _session.Query<BackupVersionFile>()
-            .Where(f => f.Path == path);
+        var sql = "SELECT * FROM backupversionfile WHERE Path = $path";
+        var parameters = new Dictionary<string, object> { { "path", path } };
 
         if (backupSourceId.HasValue)
         {
-            query = query.Where(f => f.BackupSourceId == backupSourceId.Value);
+            sql += " AND BackupSourceId = $backupSourceId";
+            parameters.Add("backupSourceId", backupSourceId.Value);
         }
 
-        var entry = await query
-            .OrderByDescending(f => f.LastModified)
-            .FirstOrDefaultAsync(cancellationToken);
+        sql += " ORDER BY LastModified DESC LIMIT 1";
+
+        var entry = await _repository.QueryScalarAsync<BackupVersionFile>(sql, parameters, cancellationToken);
 
         if (entry == null)
         {

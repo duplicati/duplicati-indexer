@@ -64,17 +64,17 @@ public class BackupFileEntry
     /// <summary>
     /// Gets or sets the last modified timestamp.
     /// </summary>
-    public DateTimeOffset LastModified { get; set; }
+    public DateTime LastModified { get; set; }
 
     /// <summary>
     /// Gets or sets the version timestamp when this file was added.
     /// </summary>
-    public DateTimeOffset VersionAdded { get; set; }
+    public DateTime VersionAdded { get; set; }
 
     /// <summary>
     /// Gets or sets the version timestamp when this file was deleted, if applicable.
     /// </summary>
-    public DateTimeOffset? VersionDeleted { get; set; }
+    public DateTime? VersionDeleted { get; set; }
 
     /// <summary>
     /// Gets a value indicating whether the file is indexed.
@@ -89,7 +89,7 @@ public class BackupFileEntry
     /// <summary>
     /// Gets or sets the timestamp of the last indexing attempt.
     /// </summary>
-    public DateTimeOffset? LastIndexingAttempt { get; set; }
+    public DateTime? LastIndexingAttempt { get; set; }
 
     /// <summary>
     /// Gets or sets the error message if indexing failed.

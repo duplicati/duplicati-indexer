@@ -1,6 +1,6 @@
 using DuplicatiIndexer.Configuration;
 using DuplicatiIndexer.Data.Entities;
-using Marten;
+using DuplicatiIndexer.Data;
 
 namespace DuplicatiIndexer.Services;
 
@@ -9,7 +9,7 @@ namespace DuplicatiIndexer.Services;
 /// </summary>
 public class FilenameFilterService
 {
-    private readonly IDocumentSession _session;
+    private readonly ISurrealRepository _repository;
     private readonly EnvironmentConfig _config;
     private readonly ILogger<FilenameFilterService> _logger;
 
@@ -51,15 +51,15 @@ public class FilenameFilterService
     /// <summary>
     /// Initializes a new instance of the <see cref="FilenameFilterService"/> class.
     /// </summary>
-    /// <param name="session">The Marten document session.</param>
+    /// <param name="repository">The Surreal repository.</param>
     /// <param name="config">The environment configuration.</param>
     /// <param name="logger">The logger.</param>
     public FilenameFilterService(
-        IDocumentSession session,
+        ISurrealRepository repository,
         EnvironmentConfig config,
         ILogger<FilenameFilterService> logger)
     {
-        _session = session;
+        _repository = repository;
         _config = config;
         _logger = logger;
     }
@@ -124,7 +124,7 @@ public class FilenameFilterService
         foreach (var ext in extensions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             // Ensure extension starts with "."
-            result.Add(ext.TrimStart('.') + ".");
+            result.Add("." + ext.TrimStart('.'));
         }
 
         // Fix empty extension case
@@ -159,22 +159,36 @@ public class FilenameFilterService
     /// <param name="version">The version timestamp.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A list of file entries that need indexing.</returns>
-    public async Task<List<BackupFileEntry>> GetFilesNeedingIndexingAsync(
+    public async Task<List<string>> GetFilesNeedingIndexingAsync(
         Guid backupSourceId,
         DateTimeOffset version,
+        int? maxFileCount = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Filtering files for indexing: BackupSourceId={BackupSourceId}, Version={Version}",
             backupSourceId, version);
 
-        // Get all unindexed files added in this version
-        var files = await _session.Query<BackupFileEntry>()
-            .Where(f => f.BackupSourceId == backupSourceId
-                     && f.VersionAdded == version
-                     && !f.IsIndexed
-                     && f.VersionDeleted == null)
-            .ToListAsync(cancellationToken);
+        var files = new List<string>();
+        int start = 0;
+        const int batchSize = 10000;
+        
+        _logger.LogInformation("Paginating dataset via WebSocket chunks of {BatchSize}...", batchSize);
+
+        while (true)
+        {
+            var batch = (await _repository.QueryAsync<string>(
+                $"SELECT value Path FROM backupfileentry WHERE BackupSourceId = $backupSourceId AND IndexingStatus IN [0, 1] AND VersionDeleted = null LIMIT {batchSize} START {start}",
+                new Dictionary<string, object>
+                {
+                    { "backupSourceId", backupSourceId }
+                }, cancellationToken)).ToList();
+
+            if (batch.Count == 0) break;
+            
+            files.AddRange(batch);
+            start += batchSize;
+        }
 
         _logger.LogInformation(
             "Found {TotalFiles} unindexed files for BackupSourceId={BackupSourceId}, Version={Version}",
@@ -186,29 +200,33 @@ public class FilenameFilterService
             "Using {ExtensionCount} indexable extensions: {Extensions}",
             indexableExtensions.Count, string.Join(", ", indexableExtensions));
 
-        // Filter to only indexable files
         var indexableFiles = files
             .Where(f =>
             {
-                var extension = Path.GetExtension(f.Path);
+                var extension = Path.GetExtension(f);
                 if (extension == null)
                     return false;
                 return indexableExtensions.Contains(extension);
             })
             .ToList();
 
+        if (maxFileCount.HasValue)
+        {
+            indexableFiles = indexableFiles.Take(maxFileCount.Value).ToList();
+        }
+
         _logger.LogInformation(
-            "Filtered to {IndexableFiles} indexable files for BackupSourceId={BackupSourceId}, Version={Version}",
-            indexableFiles.Count, backupSourceId, version);
+            "Filtered to {IndexableFiles} indexable files (MaxLimit={MaxLimit}) for BackupSourceId={BackupSourceId}, Version={Version}",
+            indexableFiles.Count, maxFileCount, backupSourceId, version);
 
         // Log some examples of skipped files for debugging
         var skippedCount = files.Count - indexableFiles.Count;
         if (skippedCount > 0)
         {
             var skippedExamples = files
-                .Where(f => !indexableExtensions.Contains(Path.GetExtension(f.Path) ?? string.Empty))
+                .Where(f => !indexableExtensions.Contains(Path.GetExtension(f) ?? string.Empty))
                 .Take(5)
-                .Select(f => Path.GetExtension(f.Path) ?? "(no extension)")
+                .Select(f => Path.GetExtension(f) ?? "(no extension)")
                 .Distinct()
                 .ToList();
 

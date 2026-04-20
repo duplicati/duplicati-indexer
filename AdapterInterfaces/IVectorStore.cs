@@ -14,6 +14,11 @@ public interface IVectorStore
     Task EnsureCollectionExistsAsync(int vectorSize, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Builds the search index after bulk ingestion is complete.
+    /// </summary>
+    Task BuildSearchIndexAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Stores or updates a vector embedding for a file.
     /// </summary>
     /// <param name="fileId">The unique identifier of the file.</param>
@@ -24,15 +29,26 @@ public interface IVectorStore
     Task UpsertVectorAsync(Guid fileId, string content, float[] vector, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Stores or updates a vector embedding for a file chunk.
+    /// Stores or updates a vector embedding chunk for a file.
     /// </summary>
     /// <param name="fileId">The unique identifier of the file.</param>
-    /// <param name="chunkIndex">The index of the chunk within the file.</param>
+    /// <param name="chunkIndex">The index of the chunk.</param>
     /// <param name="content">The text content associated with the vector.</param>
     /// <param name="vector">The embedding vector.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     Task UpsertChunkVectorAsync(Guid fileId, int chunkIndex, string content, float[] vector, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores or updates multiple vector embedding chunks for a file in a single batch.
+    /// </summary>
+    /// <param name="fileId">The unique identifier of the file.</param>
+    /// <param name="chunks">A list of tuples containing chunk index, content, and the vector.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    Task UpsertChunkVectorsBatchAsync(Guid fileId, IReadOnlyList<(int Index, string Content, float[] Vector)> chunks, CancellationToken cancellationToken = default);
+
+    Task UpsertCrossFileChunkVectorsBatchAsync(IEnumerable<(Guid FileId, int Index, string Content, float[] Vector)> chunks, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes all chunk vectors for a file. Used when re-indexing a file with different chunks.

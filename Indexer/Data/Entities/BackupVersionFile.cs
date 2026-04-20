@@ -21,7 +21,7 @@ public class BackupVersionFile
     /// Gets or sets the backup version timestamp.
     /// This represents when the backup was created.
     /// </summary>
-    public DateTimeOffset Version { get; set; }
+    public DateTime Version { get; set; }
 
     /// <summary>
     /// Gets or sets the file path.
@@ -41,10 +41,10 @@ public class BackupVersionFile
     /// <summary>
     /// Gets or sets the last modified timestamp of the original file.
     /// </summary>
-    public DateTimeOffset LastModified { get; set; }
+    public DateTime LastModified { get; set; }
 
     /// <summary>
     /// Gets or sets the timestamp when this entry was recorded.
     /// </summary>
-    public DateTimeOffset RecordedAt { get; set; }
+    public DateTime RecordedAt { get; set; }
 }

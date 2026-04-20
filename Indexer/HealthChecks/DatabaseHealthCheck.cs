@@ -1,24 +1,24 @@
-using Marten;
+using SurrealDb.Net;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace DuplicatiIndexer.HealthChecks;
 
 /// <summary>
-/// Health check for PostgreSQL database connectivity via Marten.
+/// Health check for SurrealDB connectivity.
 /// </summary>
 public class DatabaseHealthCheck : IHealthCheck
 {
-    private readonly IDocumentStore _store;
+    private readonly ISurrealDbClient _client;
     private readonly ILogger<DatabaseHealthCheck> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DatabaseHealthCheck"/> class.
     /// </summary>
-    /// <param name="store">The Marten document store.</param>
+    /// <param name="client">The SurrealDB client.</param>
     /// <param name="logger">The logger.</param>
-    public DatabaseHealthCheck(IDocumentStore store, ILogger<DatabaseHealthCheck> logger)
+    public DatabaseHealthCheck(ISurrealDbClient client, ILogger<DatabaseHealthCheck> logger)
     {
-        _store = store;
+        _client = client;
         _logger = logger;
     }
 
@@ -27,12 +27,12 @@ public class DatabaseHealthCheck : IHealthCheck
     {
         try
         {
-            using var session = _store.QuerySession();
-            // Try to execute a simple query to verify connectivity
-            using var command = session.Connection.CreateCommand();
-            command.CommandText = "SELECT 1";
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return HealthCheckResult.Healthy("Database is reachable");
+            var result = await _client.Version(cancellationToken);
+            if (result != null)
+            {
+                return HealthCheckResult.Healthy($"Database is reachable: {result}");
+            }
+            return HealthCheckResult.Unhealthy("Database is reachable but returned empty version");
         }
         catch (Exception ex)
         {

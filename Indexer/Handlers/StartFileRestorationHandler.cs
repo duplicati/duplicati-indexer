@@ -2,7 +2,7 @@ using DuplicatiIndexer.Data.Entities;
 using DuplicatiIndexer.Messages;
 using DuplicatiIndexer.Services;
 using DuplicatiIndexer.Services.Security;
-using Marten;
+using DuplicatiIndexer.Data;
 using Wolverine;
 using Wolverine.Attributes;
 using System.IO;
@@ -16,25 +16,26 @@ namespace DuplicatiIndexer.Handlers;
 public class StartFileRestorationHandler
 {
     private readonly FileRestorer _fileRestorer;
-    private readonly IDocumentSession _session;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<StartFileRestorationHandler> _logger;
     private readonly IThreatStateMonitor _threatMonitor;
+    private static readonly SemaphoreSlim _restoreLock = new SemaphoreSlim(8, 8);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StartFileRestorationHandler"/> class.
     /// </summary>
     /// <param name="fileRestorer">The file restorer service.</param>
-    /// <param name="session">The Marten document session.</param>
+    /// <param name="repository">The Marten document session.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="threatMonitor">The security threat monitor.</param>
     public StartFileRestorationHandler(
         FileRestorer fileRestorer,
-        IDocumentSession session,
+        ISurrealRepository repository,
         ILogger<StartFileRestorationHandler> logger,
         IThreatStateMonitor threatMonitor)
     {
         _fileRestorer = fileRestorer;
-        _session = session;
+        _repository = repository;
         _logger = logger;
         _threatMonitor = threatMonitor;
     }
@@ -56,8 +57,7 @@ public class StartFileRestorationHandler
         try
         {
             // Get backup source configuration
-            var backupSource = await _session.Query<BackupSource>()
-                .FirstOrDefaultAsync(b => b.Id == message.BackupSourceId, cancellationToken);
+            var backupSource = await _repository.GetAsync<BackupSource>(message.BackupSourceId, cancellationToken);
 
             if (backupSource == null)
             {
@@ -83,30 +83,12 @@ public class StartFileRestorationHandler
                 return;
             }
 
-            // Get file entries from database to restore
-            var fileEntries = (await _session.Query<BackupFileEntry>()
-                .Where(f => f.BackupSourceId == message.BackupSourceId
-                         && f.VersionAdded == message.Version
-                         && f.VersionDeleted == null
-                         && message.FilePaths.Contains(f.Path))
-                .ToListAsync(cancellationToken))
-                .ToList();
-
-            if (fileEntries.Count == 0)
-            {
-                _logger.LogWarning(
-                    "No file entries found in database for restoration. BackupSourceId: {BackupSourceId}, Version: {Version}",
-                    message.BackupSourceId, message.Version);
-                return;
-            }
-
             // --- Pre-flight Canary Verification ---
-            if (_threatMonitor.CheckForCanaryFiles(fileEntries))
+            if (_threatMonitor.CheckForCanaryFiles(message.FilePaths))
             {
                 _logger.LogCritical("Canary tripwire detected for BackupSourceId: {BackupSourceId}. Pausing backup source.", message.BackupSourceId);
                 backupSource.IsPaused = true;
-                _session.Update(backupSource);
-                await _session.SaveChangesAsync(cancellationToken);
+                await _repository.StoreAsync(backupSource, cancellationToken);
                 
                 throw new InvalidOperationException($"Circuit breaker tripped: Canary file modified for BackupSource {message.BackupSourceId}. Backup paused.");
             }
@@ -114,32 +96,41 @@ public class StartFileRestorationHandler
 
             _logger.LogInformation(
                 "Restoring {FileCount} files to {TargetDirectory} for BackupId: {BackupId}, Version: {Version}",
-                fileEntries.Count, message.TargetDirectory, message.BackupId, message.Version);
+                message.FilePaths.Count, message.TargetDirectory, message.BackupId, message.Version);
 
             // Calculate the time parameter for Duplicati CLI
             // Duplicati uses --time to specify which backup version to restore from
             var timeParameter = CalculateTimeParameter(message.Version);
 
             // Restore files using FileRestorer
-            var success = await _fileRestorer.RestoreFilesAsync(
-                fileEntries,
-                message.TargetDirectory,
-                backupSource.TargetUrl,
-                backupSource.EncryptionPassword,
-                timeParameter);
+            bool success = false;
+            await _restoreLock.WaitAsync(cancellationToken);
+            try
+            {
+                success = await _fileRestorer.RestoreFilesAsync(
+                    message.FilePaths,
+                    message.TargetDirectory,
+                    backupSource.TargetUrl,
+                    backupSource.EncryptionPassword,
+                    timeParameter);
+            }
+            finally
+            {
+                _restoreLock.Release();
+            }
 
             if (success)
             {
                 _logger.LogInformation(
                     "Successfully restored {FileCount} files to {TargetDirectory} for BackupId: {BackupId}, Version: {Version}",
-                    fileEntries.Count, message.TargetDirectory, message.BackupId, message.Version);
+                    message.FilePaths.Count, message.TargetDirectory, message.BackupId, message.Version);
 
                 // Publish ExtractTextAndIndex messages for each restored file
-                foreach (var fileEntry in fileEntries)
+                foreach (var path in message.FilePaths)
                 {
                     // Construct the restored file path
                     // The file is restored maintaining the directory structure within the target directory
-                    var restoredFilePath = Path.Combine(message.TargetDirectory, fileEntry.Path.TrimStart('/', '\\'));
+                    var restoredFilePath = Path.Combine(message.TargetDirectory, path.TrimStart('/', '\\'));
 
                     // --- Post-flight Ransomware Analyzer ---
                     if (_threatMonitor.IsEnabled && File.Exists(restoredFilePath))
@@ -156,15 +147,14 @@ public class StartFileRestorationHandler
                             
                             if (entropy > RansomwareAnalyzer.CRITICAL_ENTROPY_THRESHOLD)
                             {
-                                _logger.LogWarning("Anomalous file detected! Entropy {Entropy} for file {FilePath}", entropy, fileEntry.Path);
+                                _logger.LogWarning("Anomalous file detected! Entropy {Entropy} for file {FilePath}", entropy, path);
                                 _threatMonitor.RecordAnomalousFile(message.BackupSourceId);
                                 
                                 if (_threatMonitor.IsVelocityThresholdExceeded(message.BackupSourceId))
                                 {
                                     _logger.LogCritical("Velocity threshold exceeded for BackupSourceId: {BackupSourceId}. Pausing backup.", message.BackupSourceId);
                                     backupSource.IsPaused = true;
-                                    _session.Update(backupSource);
-                                    await _session.SaveChangesAsync(cancellationToken);
+                                    await _repository.StoreAsync(backupSource, cancellationToken);
                                     
                                     throw new InvalidOperationException($"Circuit breaker tripped: Velocity limit exceeded for BackupSource {message.BackupSourceId}.");
                                 }
@@ -182,15 +172,14 @@ public class StartFileRestorationHandler
                             var span = new ReadOnlySpan<byte>(buffer, 0, bytesRead);
                             if (!RansomwareAnalyzer.VerifyMagicBytes(span, extension))
                             {
-                                _logger.LogWarning("Anomalous file detected! Magic bytes mismatch for file {FilePath}", fileEntry.Path);
+                                _logger.LogWarning("Anomalous file detected! Magic bytes mismatch for file {FilePath}", path);
                                 _threatMonitor.RecordAnomalousFile(message.BackupSourceId);
                                 
                                 if (_threatMonitor.IsVelocityThresholdExceeded(message.BackupSourceId))
                                 {
                                     _logger.LogCritical("Velocity threshold exceeded for BackupSourceId: {BackupSourceId}. Pausing backup.", message.BackupSourceId);
                                     backupSource.IsPaused = true;
-                                    _session.Update(backupSource);
-                                    await _session.SaveChangesAsync(cancellationToken);
+                                    await _repository.StoreAsync(backupSource, cancellationToken);
                                     
                                     throw new InvalidOperationException($"Circuit breaker tripped: Velocity limit exceeded for BackupSource {message.BackupSourceId}.");
                                 }
@@ -202,24 +191,23 @@ public class StartFileRestorationHandler
                     }
                     // ---------------------------------------
 
-                    _logger.LogInformation(
-                        "Publishing ExtractTextAndIndex message for FileEntryId: {FileEntryId}, Path: {OriginalPath}",
-                        fileEntry.Id, fileEntry.Path);
+                    _logger.LogDebug(
+                        "Publishing ExtractTextAndIndex message for BackupSourceId: {BackupSourceId}, Path: {OriginalPath}",
+                        message.BackupSourceId, path);
 
                     await bus.PublishAsync(new ExtractTextAndIndex
                     {
                         BackupId = message.BackupId,
                         BackupSourceId = message.BackupSourceId,
                         Version = message.Version,
-                        FileEntryId = fileEntry.Id,
                         RestoredFilePath = restoredFilePath,
-                        OriginalFilePath = fileEntry.Path
+                        OriginalFilePath = path
                     });
                 }
 
                 _logger.LogInformation(
                     "Published {FileCount} ExtractTextAndIndex messages for BackupId: {BackupId}, Version: {Version}",
-                    fileEntries.Count, message.BackupId, message.Version);
+                    message.FilePaths.Count, message.BackupId, message.Version);
             }
             else
             {

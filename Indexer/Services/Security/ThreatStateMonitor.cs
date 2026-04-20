@@ -18,15 +18,15 @@ public class ThreatStateMonitor : IThreatStateMonitor
         _logger = logger;
     }
 
-    public bool CheckForCanaryFiles(IEnumerable<BackupFileEntry> files)
+    public bool CheckForCanaryFiles(IEnumerable<string> filePaths)
     {
-        foreach (var file in files)
+        foreach (var path in filePaths)
         {
-            var pathSpan = file.Path.AsSpan();
+            var pathSpan = path.AsSpan();
             if (pathSpan.Contains("_canary", StringComparison.OrdinalIgnoreCase) ||
                 pathSpan.Contains(".tripwire", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogCritical("Canary tripwire triggered by maliciously modified file: {FilePath}", file.Path);
+                _logger.LogCritical("Canary tripwire triggered by maliciously modified file: {FilePath}", path);
                 return true;
             }
         }

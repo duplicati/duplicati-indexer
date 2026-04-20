@@ -1,0 +1,1730 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>SurrealDb.Net</name>
+    </assembly>
+    <members>
+        <member name="T:SurrealDb.Net.Exceptions.EmptySurrealDbResponseException">
+            <summary>
+            Generated exception when the response from the SurrealDb query is empty.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Exceptions.SurrealDbErrorResultException">
+            <summary>
+            Generated exception when the response from the SurrealDb query is an unexpected error.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Exceptions.SurrealDbException">
+            <summary>
+            Generated exception when the response from the SurrealDb query is an unexpected error.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Extensions.DependencyInjection.SurrealDbLoggingOptions.SensitiveDataLoggingEnabled">
+            <summary>
+            Used to detect if application data should be included in logs.
+            This typically include parameter values set for SURQL queries.
+            You should only enable this flag if you have the appropriate security measures in place based on the sensitivity of this data.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Extensions.SemverExtensions.ToSemver(System.String)">
+            <summary>
+            Converts a SurrealDB version string to a Semver version.
+            </summary>
+            <param name="version">The SurrealDB version string extracted from <see cref="M:SurrealDb.Net.ISurrealDbClient.Version(System.Threading.CancellationToken)"/>.</param>
+            <returns>The full Semver version.</returns>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+            <exception cref="T:System.FormatException"></exception>
+            <exception cref="T:System.OverflowException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Internals.Helpers.RandomHelper.CreateRandomId">
+            <summary>
+            Generates a random string with 8 characters
+            </summary>
+        </member>
+        <member name="F:SurrealDb.Net.Internals.Logging.DbLoggerCategory.Name">
+            <summary>
+            The prefix for all logger categories.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Internals.Logging.DbLoggerCategory.Connection">
+            <summary>
+            Logger category for messages related to connection operations.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Internals.Logging.DbLoggerCategory.Method">
+            <summary>
+            Logger category for method execution, excluding <see cref="M:SurrealDb.Net.ISurrealDbClient.Connect(System.Threading.CancellationToken)"/>.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Internals.Logging.DbLoggerCategory.Query">
+            <summary>
+            Logger category for messages related to written or generated queries, that can be executed within
+            <see cref="M:SurrealDb.Net.ISurrealDbClient.Query(System.FormattableString,System.Threading.CancellationToken)" />
+            or <see cref="M:SurrealDb.Net.ISurrealDbClient.RawQuery(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.Threading.CancellationToken)"/>.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Internals.ISurrealDbProviderEngine.Initialize(Microsoft.Extensions.DependencyInjection.SurrealDbOptions,System.Action{Dahomey.Cbor.CborOptions},SurrealDb.Net.Extensions.DependencyInjection.ISurrealDbLoggerFactory)">
+            <summary>
+            Initializes engine dynamically, due to DependencyInjection interop.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Internals.SurrealDbWsEngine.InternalConnectAsync(System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Avoid multiple connections in a multi-threading context
+            and prevent usage before initialized
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Auth.DatabaseAuth">
+            <summary>
+            Credentials for the database user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.DatabaseAuth.Namespace">
+            <summary>
+            The namespace the user has access to
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.DatabaseAuth.Database">
+            <summary>
+            The database the user has access to
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.DatabaseAuth.Username">
+            <summary>
+            The username of the namespace user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.DatabaseAuth.Password">
+            <summary>
+            The password of the namespace user
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Auth.Jwt">
+             <summary>
+             A JSON Web Token for authenticating with the server.<br /><br />
+            
+             This class represents a JSON Web Token (JWT) that can be used for authentication purposes.<br /><br />
+            
+             However, you should take care to ensure that only authorized users have access to the JWT.<br />
+             For example:<br />
+             * it can be stored in a secure cookie,<br />
+             * stored in a database with restricted access,<br />
+             * or encrypted in conjunction with other encryption mechanisms.<br />
+             </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.Jwt.Token">
+            <summary>
+            The underlying token string
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Auth.NamespaceAuth">
+            <summary>
+            Credentials for the namespace user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.NamespaceAuth.Namespace">
+            <summary>
+            The namespace the user has access to
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.NamespaceAuth.Username">
+            <summary>
+            The username of the namespace user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.NamespaceAuth.Password">
+            <summary>
+            The password of the namespace user
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Auth.RootAuth">
+            <summary>
+            Credentials for the root user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.RootAuth.Username">
+            <summary>
+            The username of the root user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.RootAuth.Password">
+            <summary>
+            The password of the root user
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Auth.ScopeAuth">
+            <summary>
+            Credentials for the scope user
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.ScopeAuth.Namespace">
+            <summary>
+            The namespace the user has access to
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.ScopeAuth.Database">
+            <summary>
+            The database the user has access to
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.ScopeAuth.Scope">
+            <summary>
+            The scope to use for signin and signup
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Auth.ScopeAuth.Access">
+            <summary>
+            The access method to use for signin and signup
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Duration">
+             <summary>
+             Represents a SurrealDB duration.<br />
+             Its sole purpose is to be more precise than <see cref="T:System.TimeSpan"/>
+             and to be able to read the nanosecond part of the <see cref="T:SurrealDb.Net.Models.Duration"/> data type.
+             In fact, <see cref="T:System.TimeSpan"/> maximum precision is <see cref="P:System.TimeSpan.Ticks"/>.
+             The <see cref="F:System.TimeSpan.MinValue"/> of a <see cref="T:System.TimeSpan"/> is 1 <see cref="P:System.TimeSpan.Ticks"/> which represent 100 nanoseconds.
+             If a precision under 100 nanoseconds is required, then use <see cref="T:SurrealDb.Net.Models.Duration"/>.<br /><br />
+            
+             Otherwise, you may simply want to use <see cref="T:System.TimeSpan"/>.
+             </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Duration.#ctor">
+            <summary>
+            Creates a default <see cref="T:SurrealDb.Net.Models.Duration"/>, equivalent to "0ns".
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Duration.#ctor(System.Int64,System.Int32)">
+            <summary>
+            Creates a <see cref="T:SurrealDb.Net.Models.Duration"/> from <paramref name="seconds"/> and <paramref name="nanoseconds"/> parts.
+            </summary>
+            <param name="seconds">The total number of seconds to store in this <see cref="T:SurrealDb.Net.Models.Duration"/>. Defaults to 0.</param>
+            <param name="nanoseconds">The total number of nanoseconds to store in this <see cref="T:SurrealDb.Net.Models.Duration"/>. Defaults to 0.</param>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Duration.ToTimeSpan">
+            <summary>
+            Converts the <see cref="T:SurrealDb.Net.Models.Duration"/> to a <see cref="T:System.TimeSpan"/> unit.
+            </summary>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+            <exception cref="T:System.OverflowException"></exception>
+        </member>
+        <member name="F:SurrealDb.Net.Models.Duration.Zero">
+            <summary>
+            A Zero duration (equals to "0ns")
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.NanoSeconds">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.NanoSeconds"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.MicroSeconds">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.MicroSeconds"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.MilliSeconds">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.MilliSeconds"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.Seconds">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.Seconds"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.Minutes">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.Minutes"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.Hours">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.Hours"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.Days">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.Days"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.Weeks">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.Weeks"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Duration.Years">
+            <summary>
+            The <see cref="P:SurrealDb.Net.Models.Duration.Years"/> part of the <see cref="T:SurrealDb.Net.Models.Duration"/> type.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Future">
+            <summary>
+            This represents the <c>future</c> type that we retrieve in certain responses from SurrealDB.
+            It is used to represent a computational function.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.LiveQuery.SurrealDbLiveQuery`1.GetResults(System.Threading.CancellationToken)">
+            <summary>
+            Returns an enumerator that iterates asynchronously through the collection of results
+            (all actions CREATE, UPDATE and DELETE, except OPEN and CLOSE).
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.Exception">When the SurrealDB client has been disposed.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.LiveQuery.SurrealDbLiveQuery`1.GetCreatedRecords(System.Threading.CancellationToken)">
+            <summary>
+            Returns an enumerator that iterates asynchronously through the collection of created records.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.Exception">When the SurrealDB client has been disposed.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.LiveQuery.SurrealDbLiveQuery`1.GetUpdatedRecords(System.Threading.CancellationToken)">
+            <summary>
+            Returns an enumerator that iterates asynchronously through the collection of updated records.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.Exception">When the SurrealDB client has been disposed.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.LiveQuery.SurrealDbLiveQuery`1.GetDeletedRecords(System.Threading.CancellationToken)">
+            <summary>
+            Returns an enumerator that iterates asynchronously through the collection of deleted records.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.Exception">When the SurrealDB client has been disposed.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.LiveQuery.SurrealDbLiveQuery`1.KillAsync(System.Threading.CancellationToken)">
+            <summary>
+            Kills the underlying live query.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>Whether the Live Query was successfully killed or not.</returns>
+            <exception cref="T:System.NotSupportedException"></exception>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="T:SurrealDb.Net.Models.None">
+            <summary>
+            This represents the <c>NONE</c> type that we retrieve in certain responses from SurrealDB.
+            It is used to represent the absence of a value.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Range`2">
+            <summary>
+            This represents a <c>Range</c> type that is composed of possible delimiters
+            known as <see cref="P:SurrealDb.Net.Models.Range`2.Start"/> and <see cref="P:SurrealDb.Net.Models.Range`2.End"/>.
+            </summary>
+            <typeparam name="TStart">The value type of the left/start bound.</typeparam>
+            <typeparam name="TEnd">The value type of the right/end bound.</typeparam>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Range`2.Start">
+            <summary>
+            The left/start bound of the range.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Range`2.End">
+            <summary>
+            The right/end bound of the range.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Range`2.#ctor">
+            <summary>
+            Creates a full Range, that has no defined delimiters.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Range`2.#ctor(System.Nullable{SurrealDb.Net.Models.RangeBound{`0}},System.Nullable{SurrealDb.Net.Models.RangeBound{`1}})">
+            <summary>
+            Creates a new Range, given the start and end range.
+            </summary>
+            <param name="start">The expected left/start bound.</param>
+            <param name="end">The expected right/end bound.</param>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Range.Full">
+            <summary>
+            Creates a full <see cref="T:SurrealDb.Net.Models.Range`2"/>, having no start or end delimiter.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Range.StartFrom``1(SurrealDb.Net.Models.RangeBound{``0})">
+            <summary>
+            Creates a partial <see cref="T:SurrealDb.Net.Models.Range`2"/>, having a start bound limit but no end delimiter.
+            </summary>
+            <typeparam name="T">The value type of the left/start bound.</typeparam>
+            <param name="start">The expected left/start bound.</param>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Range.EndTo``1(SurrealDb.Net.Models.RangeBound{``0})">
+            <summary>
+            Creates a partial <see cref="T:SurrealDb.Net.Models.Range`2"/>, having an end bound limit but no start delimiter.
+            </summary>
+            <typeparam name="T">The value type of the right/end bound.</typeparam>
+            <param name="end">The expected right/end bound.</param>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Range.FromRange(System.Range)">
+            <summary>
+            Creates a <see cref="T:SurrealDb.Net.Models.Range`2"/> from a native <see cref="T:System.Range"/> type.
+            </summary>
+            <param name="range">The native range to start from.</param>
+            <exception cref="T:System.NotSupportedException">Failed to convert because one index of the range is 'fromEnd'.</exception>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RangeBound`1">
+            <summary>
+            A <see cref="T:SurrealDb.Net.Models.RangeBound`1"/> used exclusively for the <see cref="T:SurrealDb.Net.Models.Range`2"/> type.
+            </summary>
+            <typeparam name="T">The data type of the bound value.</typeparam>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RangeBound`1.Type">
+            <summary>
+            The type of the bound.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RangeBound`1.Value">
+            <summary>
+            The value of the bound.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RangeBound`1.#ctor(`0,SurrealDb.Net.Models.RangeBoundType)">
+            <summary>
+            Creates a new RangeBound, given a value and the type of the bound.
+            </summary>
+            <param name="value">The expected bound value.</param>
+            <param name="type">The expected bound type.</param>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RangeBound.Inclusive``1(``0)">
+            <summary>
+            Creates an inclusive <see cref="T:SurrealDb.Net.Models.RangeBound`1"/>.
+            </summary>
+            <typeparam name="T">The data type of the bound value.</typeparam>
+            <param name="value">The expected bound value.</param>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RangeBound.Exclusive``1(``0)">
+            <summary>
+            Creates an exclusive <see cref="T:SurrealDb.Net.Models.RangeBound`1"/>.
+            </summary>
+            <typeparam name="T">The data type of the bound value.</typeparam>
+            <param name="value">The expected bound value.</param>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RangeBoundType">
+            <summary>
+            The type of <see cref="T:SurrealDb.Net.Models.RangeBound`1"/>. It can be either inclusive or exclusive.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Record">
+            <summary>
+            The base record type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Record.Id">
+            <summary>
+            The id of the record
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RecordId">
+            <summary>
+            A non-generic base implementation for the <see cref="T:SurrealDb.Net.Models.RecordId"/> type.
+            Reflects a record ID (that contains both the record's table name and id).
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RecordId.Table">
+            <summary>
+            Table part of the record id.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.DeserializeId``1">
+            <summary>
+            Deserialize the non-generic id part stored in the record id to the type <typeparamref name="T"/>.
+            </summary>
+            <typeparam name="T">Expected type of the id part.</typeparam>
+            <exception cref="T:System.InvalidOperationException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.TryDeserializeId``1(``0@)">
+            <summary>
+            Try to deserialize the non-generic id part stored in the record id to the type <typeparamref name="T"/>.
+            </summary>
+            <typeparam name="T">Expected type of the id part.</typeparam>
+            <param name="value">The deserialized id part.</param>
+            <returns>Returns true if deserialization succeeded.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From``1(System.String,``0)">
+            <summary>
+            Creates a new record ID from a generically typed table and a generically typed id.
+            </summary>
+            <typeparam name="TId">The type of the record id part</typeparam>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From(System.String,System.String)">
+            <summary>
+            Creates a new record ID from a <see cref="T:System.String"/> typed table and a <see cref="T:System.String"/> typed id.
+            </summary>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From(System.String,System.Int32)">
+            <summary>
+            Creates a new record ID from a <see cref="T:System.String"/> typed table and an <see cref="T:System.Int32"/> typed id.
+            </summary>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From(System.String,System.Int64)">
+            <summary>
+            Creates a new record ID from a <see cref="T:System.String"/> typed table and an <see cref="T:System.Int64"/> typed id.
+            </summary>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From(System.String,System.Int16)">
+            <summary>
+            Creates a new record ID from a <see cref="T:System.String"/> typed table and an <see cref="T:System.Int16"/> typed id.
+            </summary>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From(System.String,System.Byte)">
+            <summary>
+            Creates a new record ID from a <see cref="T:System.String"/> typed table and an <see cref="T:System.Byte"/> typed id.
+            </summary>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordId.From(System.String,System.Guid)">
+            <summary>
+            Creates a new record ID from a <see cref="T:System.String"/> typed table and an <see cref="T:System.Guid"/> typed id.
+            </summary>
+            <param name="table">Table name</param>
+            <param name="id">Table id</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RecordIdOf`1">
+            <summary>
+            Reflects a record ID (that contains both the record's table name and id).
+            Inherited implementation of <see cref="T:SurrealDb.Net.Models.RecordId"/>
+            that enforces <see cref="P:SurrealDb.Net.Models.RecordIdOf`1.Id"/> to be a generic type (<typeparamref name="TId"/>).
+            </summary>
+            <typeparam name="TId">The type of <see cref="P:SurrealDb.Net.Models.RecordIdOf`1.Id"/> property.</typeparam>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RecordIdOf`1.Id">
+            <summary>
+            Id part of the record id.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordIdOf`1.#ctor(System.String,`0)">
+            <summary>
+            Creates a <see cref="T:SurrealDb.Net.Models.RecordId"/> with defined table name and id of type <typeparamref name="TId"/>.
+            </summary>
+            <param name="table">Table part of the record id.</param>
+            <param name="id">Id part of the record id.</param>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RecordIdOfString">
+            <summary>
+            Reflects a record ID (that contains both the record's table name and id).
+            Inherited implementation of <see cref="T:SurrealDb.Net.Models.RecordIdOf`1"/>
+            that enforces the generic type of <see cref="P:SurrealDb.Net.Models.RecordIdOf`1.Id"/> to be of type <see cref="T:System.String"/>.
+            </summary>
+            <remarks>
+            Example: `table_name:record_id`
+            </remarks>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordIdOfString.#ctor(System.String,System.String)">
+            <summary>
+            Creates a <see cref="T:SurrealDb.Net.Models.RecordId"/> with defined table name and id of type <see cref="T:System.String"/>.
+            </summary>
+            <param name="table">Table part of the record id.</param>
+            <param name="id">Id part of the record id.</param>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RecordIdRange`2">
+            <summary>
+            This represents a <c>RecordIdRange</c> type that is composed of a table name and a <see cref="T:SurrealDb.Net.Models.Range`2"/>.
+            </summary>
+            <typeparam name="TStart">The value type of the left/start bound.</typeparam>
+            <typeparam name="TEnd">The value type of the right/end bound.</typeparam>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RecordIdRange`2.Table">
+            <summary>
+            The table name.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RecordIdRange`2.Range">
+            <summary>
+            The range used to limit search for the id part of a <see cref="T:SurrealDb.Net.Models.RecordId"/>.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordIdRange`2.#ctor(System.String,SurrealDb.Net.Models.RangeBound{`0},SurrealDb.Net.Models.RangeBound{`1})">
+            <summary>
+            Creates a new RecordIdRange, given the start and end bounds.
+            </summary>
+            <param name="table">The table name.</param>
+            <param name="start">The left/start range bound.</param>
+            <param name="end">The right/end range bound.</param>
+            <exception cref="T:System.ArgumentNullException">A table name should be provided.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.RecordIdRange`2.#ctor(System.String,SurrealDb.Net.Models.Range{`0,`1})">
+            <summary>
+            Creates a new RecordIdRange, given an existing range.
+            </summary>
+            <param name="table">The table name.</param>
+            <param name="range">The range.</param>
+            <exception cref="T:System.ArgumentNullException">A table name should be provided.</exception>
+            <exception cref="T:System.ArgumentException">The range must be valid.</exception>
+        </member>
+        <member name="T:SurrealDb.Net.Models.RelationRecord">
+            <summary>
+            The base relation record type.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RelationRecord.In">
+            <summary>
+            The id of the record the relation starts from
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.RelationRecord.Out">
+            <summary>
+            The id of the record the relation ends at
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.SurrealDbResponse">
+            <summary>
+            The response type of a query request.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.Oks">
+            <summary>
+            Gets all OK results from the query response.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.Errors">
+            <summary>
+            Gets all errors from the query response.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.FirstResult">
+            <summary>
+            Gets the first result from the response, null otherwise.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.FirstOk">
+            <summary>
+            Gets the first OK result from the response, null otherwise.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.FirstError">
+            <summary>
+            Gets the first error from the response, null otherwise.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.HasErrors">
+            <summary>
+            Checks if the response contains any errors.
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.IsEmpty">
+            <summary>
+            Checks if the response contains any result.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbResponse.IsSingle">
+            <summary>
+            Checks if the response contains a single result.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Response.SurrealDbResponse.EnsureAllOks">
+            <summary>
+            Throws an exception if at least one error is found in the list of <see cref="T:SurrealDb.Net.Models.Response.ISurrealDbResult"/>.
+            </summary>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException">The SurrealDbResponse is unsuccessful.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Response.SurrealDbResponse.GetValue``1(System.Int32)">
+            <summary>
+            Gets the result value of the query based on its index.
+            </summary>
+            <typeparam name="T">The type of the query result value.</typeparam>
+            <param name="index">The index of the result in the query response.</param>
+            <exception cref="T:System.IndexOutOfRangeException">Index is out of range.</exception>
+            <exception cref="T:System.NotSupportedException">The result is not an OK result.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Response.SurrealDbResponse.GetValues``1(System.Int32)">
+            <summary>
+            Gets the result value of the query based on its index.
+            </summary>
+            <typeparam name="T">The type of the query result value.</typeparam>
+            <param name="index">The index of the result in the query response.</param>
+            <exception cref="T:System.IndexOutOfRangeException">Index is out of range.</exception>
+            <exception cref="T:System.NotSupportedException">The result is not an OK result.</exception>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.SurrealDbErrorResult">
+            <summary>
+            A SurrealDB error result that can be returned from a query request.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbErrorResult.Time">
+            <summary>
+            Time taken to execute the query.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbErrorResult.Status">
+            <summary>
+            Status of the query ("ERR").
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbErrorResult.Details">
+            <summary>
+            Details about the error.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.ISurrealDbResult">
+            <summary>
+            The base SurrealDB result interface, result of a query request.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.ISurrealDbErrorResult">
+            <summary>
+            The base SurrealDB error result interface, result of a query request.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.SurrealDbOkResult">
+            <summary>
+            A SurrealDB ok result that can be returned from a query request.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbOkResult.Time">
+            <summary>
+            Time taken to execute the query.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbOkResult.Status">
+            <summary>
+            Status of the query ("OK").
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Response.SurrealDbOkResult.GetValue``1">
+            <summary>
+            Gets the result value of the query.
+            </summary>
+            <typeparam name="T">The type of the query result value.</typeparam>
+            <exception cref="T:Dahomey.Cbor.CborException">T is not compatible with the query result value.</exception>
+            <exception cref="T:System.NotSupportedException">There is no compatible deserializer for T.</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.Response.SurrealDbOkResult.GetValues``1">
+            <summary>
+            Enumerates the result value of the query.
+            </summary>
+            <typeparam name="T">The type of the query result value.</typeparam>
+            <exception cref="T:Dahomey.Cbor.CborException">T is not compatible with the query result value.</exception>
+            <exception cref="T:System.NotSupportedException">There is no compatible deserializer for T.</exception>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.SurrealDbProtocolErrorResult">
+            <summary>
+            A SurrealDB protocol error result that can be returned from a query request, either from a 400 or 500 error.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbProtocolErrorResult.Code">
+            <summary>
+            The HTTP status code of the error.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbProtocolErrorResult.Details">
+            <summary>
+            Details about the error.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbProtocolErrorResult.Description">
+            <summary>
+            Description of the error.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.Models.Response.SurrealDbProtocolErrorResult.Information">
+            <summary>
+            Some information about the error.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.Response.SurrealDbUnknownResult">
+            <summary>
+            A SurrealDB unknown result that can be returned from a query request.
+            </summary>
+        </member>
+        <member name="T:SurrealDb.Net.Models.StringRecordId">
+             <summary>
+             A placeholder type that reflects a Record ID stored a single string.
+             </summary>
+            
+             <remarks>
+             For performance reasons, the parsing of Record IDs is not implemented in the library,
+             as that would require to parse any SurrealQL value in the provided <see cref="T:System.String"/>.
+             And for this reason, this type is only used for one-way communication,
+             sending a <see cref="T:SurrealDb.Net.Models.StringRecordId"/> from the client to a SurrealDB instance.
+             This library will never be able to deserialize a <see cref="T:SurrealDb.Net.Models.StringRecordId"/> into a <see cref="T:SurrealDb.Net.Models.RecordId"/>.
+             As such, please consider using <see cref="T:SurrealDb.Net.Models.RecordId"/> or one of its inherited types for these scenarii.
+             </remarks>
+        </member>
+        <member name="P:SurrealDb.Net.Models.StringRecordId.Value">
+            <summary>
+            The value representing the Record ID as a single string, e.g.
+            <example>"person:john"</example>
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.Models.StringRecordId.#ctor">
+            <summary>
+            Instanciate a new <see cref="T:SurrealDb.Net.Models.StringRecordId"/> that will contain a Record ID representation as a single string.
+            </summary>
+            <exception cref="T:System.InvalidOperationException">A value is required</exception>
+        </member>
+        <member name="M:SurrealDb.Net.Models.StringRecordId.#ctor(System.String)">
+            <summary>
+            Instanciate a new <see cref="T:SurrealDb.Net.Models.StringRecordId"/> that will contain a Record ID representation as a single string.
+            </summary>
+            <param name="value">
+            The value representing the Record ID as a single string, e.g.
+            <example>"person:john"</example>
+            </param>
+        </member>
+        <member name="T:SurrealDb.Net.SurrealDbClient">
+            <summary>
+            The entry point to communicate with a SurrealDB instance.
+            Authenticate, use namespace/database, execute queries, etc...
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.SurrealDbClient.#ctor(System.String,System.String,System.Net.Http.IHttpClientFactory,System.Action{Dahomey.Cbor.CborOptions},Microsoft.Extensions.Logging.ILoggerFactory)">
+            <summary>
+            Creates a new SurrealDbClient, with the defined endpoint.
+            </summary>
+            <param name="endpoint">The endpoint to access a SurrealDB instance.</param>
+            <param name="namingPolicy">The naming policy to use for serialization.</param>
+            <param name="httpClientFactory">An IHttpClientFactory instance, or none.</param>
+            <param name="configureCborOptions">An optional action to configure <see cref="T:Dahomey.Cbor.CborOptions"/>.</param>
+            <param name="loggerFactory">
+            An instance of <see cref="T:Microsoft.Extensions.Logging.ILoggerFactory"/> used to log messages.
+            </param>
+            <exception cref="T:System.ArgumentException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.SurrealDbClient.#ctor(Microsoft.Extensions.DependencyInjection.SurrealDbOptions,System.Net.Http.IHttpClientFactory,System.Action{Dahomey.Cbor.CborOptions},Microsoft.Extensions.Logging.ILoggerFactory)">
+            <summary>
+            Creates a new SurrealDbClient using a specific configuration.
+            </summary>
+            <param name="configuration">The configuration options for the SurrealDbClient.</param>
+            <param name="httpClientFactory">An IHttpClientFactory instance, or none.</param>
+            <param name="configureCborOptions">An optional action to configure <see cref="T:Dahomey.Cbor.CborOptions"/>.</param>
+            <param name="loggerFactory">
+            An instance of <see cref="T:Microsoft.Extensions.Logging.ILoggerFactory"/> used to log messages.
+            </param>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="T:SurrealDb.Net.ISurrealDbClient">
+            <summary>
+            The entry point to communicate with a SurrealDB instance.
+            Authenticate, use namespace/database, execute queries, etc...
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.ISurrealDbClient.Uri">
+            <summary>
+            The uri linked to the SurrealDB instance target.
+            </summary>
+        </member>
+        <member name="P:SurrealDb.Net.ISurrealDbClient.NamingPolicy">
+            <summary>
+            The naming policy used to serialize and deserialize data (eg. JSON for table name and record field names).
+            Default: PascalCase.
+            </summary>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Authenticate(SurrealDb.Net.Models.Auth.Jwt,System.Threading.CancellationToken)">
+            <summary>
+            Authenticates the current connection with a JWT.
+            </summary>
+            <param name="jwt">The JWT holder of the token.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Connect(System.Threading.CancellationToken)">
+             <summary>
+             Connects to the SurrealDB instance. This can improve performance to avoid cold starts.<br /><br />
+            
+             * Using HTTP(S) protocol: initializes a new HTTP connection<br />
+             * Using WS(S) protocol: will start a websocket connection so that further calls will be triggered immediately
+             </summary>
+             <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+             <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+             <exception cref="T:System.InvalidOperationException"></exception>
+             <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Create``1(``0,System.Threading.CancellationToken)">
+            <summary>
+            Creates the specific record in the database.
+            </summary>
+            <remarks>
+            Note: This method creates only a single record. If the record already exist, it will throw an error.
+            </remarks>
+            <typeparam name="T">The type of the record to create.</typeparam>
+            <param name="data">The record to create.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Create``1(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            Creates a record in a table in the database.
+            </summary>
+            <typeparam name="T">The type of the record to create.</typeparam>
+            <param name="table">The table name where the record will be stored.</param>
+            <param name="data">The record to create.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Create``2(SurrealDb.Net.Models.StringRecordId,``0,System.Threading.CancellationToken)">
+            <summary>
+            Creates the specific record in the database.
+            </summary>
+            <typeparam name="TData">The type of data contained in the record.</typeparam>
+            <typeparam name="TOutput">The type of the record created.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="data">The data contained in the record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Delete(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Deletes all records in a table from the database.
+            </summary>
+            <param name="table">The name of the database table</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Delete(SurrealDb.Net.Models.RecordId,System.Threading.CancellationToken)">
+            <summary>
+            Deletes the specified record from the database.
+            </summary>
+            <param name="recordId">The record id.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>Returns true if the record was removed successfully.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Delete(SurrealDb.Net.Models.StringRecordId,System.Threading.CancellationToken)">
+            <summary>
+            Deletes the specified record from the database.
+            </summary>
+            <param name="recordId">The record id.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>Returns true if the record was removed successfully.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Health(System.Threading.CancellationToken)">
+            <summary>
+            Checks the status of the database server and storage engine.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>Returns true if the database server and storage engine are healthy.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Info``1(System.Threading.CancellationToken)">
+            <summary>
+            Retrieves information about the authenticated scope user.
+            </summary>
+            <typeparam name="T">The scope user type.</typeparam>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>Returns the record of an authenticated scope user.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Insert``1(System.String,System.Collections.Generic.IEnumerable{``0},System.Threading.CancellationToken)">
+            <summary>
+            Inserts a collection of records in the database.
+            </summary>
+            <remarks>
+            Note: This method allows you to create multiple records at once.
+            In case a record already exist, it will not throw error and it will not update the existing record.
+            </remarks>
+            <typeparam name="T">The type of the record to create.</typeparam>
+            <param name="table">The table name where the records will be stored.</param>
+            <param name="data">The records to create.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The records created.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.InsertRelation``1(``0,System.Threading.CancellationToken)">
+            <summary>
+            Inserts a new relation record in the database.
+            </summary>
+            <typeparam name="T">The type of the record to create.</typeparam>
+            <param name="data">The record data used to create the record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.InsertRelation``1(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            Inserts a new relation record in the database.
+            </summary>
+            <typeparam name="T">The type of the record to create.</typeparam>
+            <param name="table">The table name where the records will be stored.</param>
+            <param name="data">The record data used to create the record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Invalidate(System.Threading.CancellationToken)">
+            <summary>
+            Invalidates the authentication for the current connection.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Kill(System.Guid,System.Threading.CancellationToken)">
+             <summary>
+             Kills an active live query.<br /><br />
+            
+             Not supported on HTTP(S) protocol.
+             </summary>
+             <param name="queryUuid">The UUID of the live query to kill.</param>
+             <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+             <exception cref="T:System.NotSupportedException"></exception>
+             <exception cref="T:System.OperationCanceledException"></exception>
+             <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.ListenLive``1(System.Guid)">
+             <summary>
+             Listen for live query responses, using live query UUID.<br /><br />
+            
+             Not supported on HTTP(S) protocol.
+             </summary>
+             <typeparam name="T">The type of the data returned by the live query.</typeparam>
+             <param name="queryUuid">The UUID of the live query to consume.</param>
+             <returns>A Live Query instance used to consume data in realtime.</returns>
+             <exception cref="T:System.NotSupportedException"></exception>
+             <exception cref="T:System.OperationCanceledException"></exception>
+             <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.LiveQuery``1(System.FormattableString,System.Threading.CancellationToken)">
+             <summary>
+             Initiates a live query from an interpolated string representing a SurrealQL query.<br /><br />
+            
+             Not supported on HTTP(S) protocol.
+             </summary>
+             <typeparam name="T">The type of the data returned by the live query.</typeparam>
+             <param name="query">The SurrealQL query.</param>
+             <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+             <returns>A Live Query instance used to consume data in realtime.</returns>
+             <exception cref="T:System.NotSupportedException"></exception>
+             <exception cref="T:System.OperationCanceledException"></exception>
+             <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.LiveRawQuery``1(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.Threading.CancellationToken)">
+             <summary>
+             Initiates a live query from a raw SurrealQL query.<br /><br />
+            
+             Not supported on HTTP(S) protocol.
+             </summary>
+             <typeparam name="T">The type of the data returned by the live query.</typeparam>
+             <param name="query">The SurrealQL query.</param>
+             <param name="parameters">A list of parameters to be used inside the SurrealQL query.</param>
+             <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+             <returns>A Live Query instance used to consume data in realtime.</returns>
+             <exception cref="T:System.NotSupportedException"></exception>
+             <exception cref="T:System.OperationCanceledException"></exception>
+             <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.LiveTable``1(System.String,System.Boolean,System.Threading.CancellationToken)">
+             <summary>
+             Initiates a live query on a table.<br /><br />
+            
+             Not supported on HTTP(S) protocol.
+             </summary>
+             <typeparam name="T">The type of the data returned by the live query.</typeparam>
+             <param name="table">The name of the database table to watch.</param>
+             <param name="diff">
+             If set to true, live notifications will include an array of JSON Patch objects,
+             rather than the entire record for each notification.
+             </param>
+             <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+             <returns>A Live Query instance used to consume data in realtime.</returns>
+             <exception cref="T:System.NotSupportedException"></exception>
+             <exception cref="T:System.OperationCanceledException"></exception>
+             <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Merge``2(``0,System.Threading.CancellationToken)">
+            <summary>
+            Modifies the specified record in the database.
+            </summary>
+            <typeparam name="TMerge">The type of the merge update.</typeparam>
+            <typeparam name="TOutput">The type of the record updated.</typeparam>
+            <param name="data">The data to merge with the current record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record updated.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Merge``1(SurrealDb.Net.Models.RecordId,System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Modifies the specified record in the database.
+            </summary>
+            <typeparam name="T">The type of the record updated.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="data">A list of key-value pairs that contains properties to change.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record updated.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Merge``1(SurrealDb.Net.Models.StringRecordId,System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Modifies the specified record in the database.
+            </summary>
+            <typeparam name="T">The type of the record updated.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="data">A list of key-value pairs that contains properties to change.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record updated.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Merge``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            Modifies all records in the database.
+            </summary>
+            <typeparam name="TMerge">The type of the merge update.</typeparam>
+            <typeparam name="TOutput">The type of the record updated.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="data">The data to merge with the current record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of updated records.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Merge``1(System.String,System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Modifies all records in the database.
+            </summary>
+            <typeparam name="T">The type of the record updated.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="data">A list of key-value pairs that contains properties to change.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of updated records.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Patch``1(SurrealDb.Net.Models.RecordId,SystemTextJsonPatch.JsonPatchDocument{``0},System.Threading.CancellationToken)">
+            <summary>
+            Modifies the specified record in the database, using JSON Patch specification (https://jsonpatch.com/).
+            </summary>
+            <typeparam name="T">The type of the record updated.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="patches">A list of JSON Patch operations.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record updated.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Patch``1(SurrealDb.Net.Models.StringRecordId,SystemTextJsonPatch.JsonPatchDocument{``0},System.Threading.CancellationToken)">
+            <summary>
+            Modifies the specified record in the database, using JSON Patch specification (https://jsonpatch.com/).
+            </summary>
+            <typeparam name="T">The type of the record updated.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="patches">A list of JSON Patch operations.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record updated.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Patch``1(System.String,SystemTextJsonPatch.JsonPatchDocument{``0},System.Threading.CancellationToken)">
+            <summary>
+            Modifies all records in the database, using JSON Patch specification (https://jsonpatch.com/).
+            </summary>
+            <typeparam name="T">The type of the record updated.</typeparam>
+            <param name="table">The name of the database table</param>
+            <param name="patches">A list of JSON Patch operations.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of updated records.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Query(System.FormattableString,System.Threading.CancellationToken)">
+            <summary>
+            Executes SurrealQL queries based on an interpolated string representing a SurrealQL query.
+            </summary>
+            <param name="query">The SurrealQL query.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of results from the SurrealQL queries.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.RawQuery(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Executes SurrealQL queries based on a raw SurrealQL query.
+            </summary>
+            <param name="query">The SurrealQL query.</param>
+            <param name="parameters">A list of parameters to be used inside the SurrealQL query.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of results from the SurrealQL queries.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``1(System.String,SurrealDb.Net.Models.RecordId,SurrealDb.Net.Models.RecordId,System.Threading.CancellationToken)">
+            <summary>
+            Creates a relation between two records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="in">The record from where the relation starts.</param>
+            <param name="out">The record to where the relation ends.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``2(System.String,SurrealDb.Net.Models.RecordId,SurrealDb.Net.Models.RecordId,``1,System.Threading.CancellationToken)">
+            <summary>
+            Creates a relation between two records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <typeparam name="TData">The type of the additional data to add to the relation record.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="in">The record from where the relation starts.</param>
+            <param name="out">The record to where the relation ends.</param>
+            <param name="data">Additional data to store in the relation record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``1(System.String,System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},SurrealDb.Net.Models.RecordId,System.Threading.CancellationToken)">
+            <summary>
+            Creates relations between records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="ins">The records from where the relation starts.</param>
+            <param name="out">The record to where the relation ends.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``2(System.String,System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},SurrealDb.Net.Models.RecordId,``1,System.Threading.CancellationToken)">
+            <summary>
+            Creates relations between records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <typeparam name="TData">The type of the additional data to add to the relation record.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="ins">The records from where the relation starts.</param>
+            <param name="out">The record to where the relation ends.</param>
+            <param name="data">Additional data to store in the relation record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``1(System.String,SurrealDb.Net.Models.RecordId,System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},System.Threading.CancellationToken)">
+            <summary>
+            Creates relations between records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="in">The record from where the relation starts.</param>
+            <param name="outs">The records to where the relation ends.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``2(System.String,SurrealDb.Net.Models.RecordId,System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},``1,System.Threading.CancellationToken)">
+            <summary>
+            Creates relations between records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <typeparam name="TData">The type of the additional data to add to the relation record.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="in">The record from where the relation starts.</param>
+            <param name="outs">The records to where the relation ends.</param>
+            <param name="data">Additional data to store in the relation record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``1(System.String,System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},System.Threading.CancellationToken)">
+            <summary>
+            Creates relations between records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="ins">The records from where the relation starts.</param>
+            <param name="outs">The records to where the relation ends.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``2(System.String,System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},System.Collections.Generic.IEnumerable{SurrealDb.Net.Models.RecordId},``1,System.Threading.CancellationToken)">
+            <summary>
+            Creates relations between records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <typeparam name="TData">The type of the additional data to add to the relation record.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="ins">The records from where the relation starts.</param>
+            <param name="outs">The records to where the relation ends.</param>
+            <param name="data">Additional data to store in the relation record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``1(SurrealDb.Net.Models.RecordId,SurrealDb.Net.Models.RecordId,SurrealDb.Net.Models.RecordId,System.Threading.CancellationToken)">
+            <summary>
+            Creates a relation between two records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="in">The record from where the relation starts.</param>
+            <param name="out">The record to where the relation ends.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Relate``2(SurrealDb.Net.Models.RecordId,SurrealDb.Net.Models.RecordId,SurrealDb.Net.Models.RecordId,``1,System.Threading.CancellationToken)">
+            <summary>
+            Creates a relation between two records.
+            </summary>
+            <typeparam name="TOutput">The type of the ouput record created.</typeparam>
+            <typeparam name="TData">The type of the additional data to add to the relation record.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="in">The record from where the relation starts.</param>
+            <param name="out">The record to where the relation ends.</param>
+            <param name="data">Additional data to store in the relation record.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Run``1(System.String,System.Object[],System.Threading.CancellationToken)">
+            <summary>
+            Runs a SurrealQL function.
+            </summary>
+            <typeparam name="T">The type of the output of the function called.</typeparam>
+            <param name="name">The full name of the function.</param>
+            <param name="args">The arguments supplied to the function.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The output of the function called.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Run``1(System.String,System.String,System.Object[],System.Threading.CancellationToken)">
+            <summary>
+            Runs a versioned SurrealQL function.
+            </summary>
+            <typeparam name="T">The type of the output of the function called.</typeparam>
+            <param name="name">The full name of the function.</param>
+            <param name="version">The version of the function.</param>
+            <param name="args">The arguments supplied to the function.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The output of the function called.</returns>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Select``1(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Selects all records in a table.
+            </summary>
+            <typeparam name="T">The type of record to extract</typeparam>
+            <param name="table">The name of the database table</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of extracted records</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Select``1(SurrealDb.Net.Models.RecordId,System.Threading.CancellationToken)">
+            <summary>
+            Selects a single record.
+            </summary>
+            <typeparam name="T">The type of the record</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The extracted record</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Select``1(SurrealDb.Net.Models.StringRecordId,System.Threading.CancellationToken)">
+            <summary>
+            Selects a single record.
+            </summary>
+            <typeparam name="T">The type of the record</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The extracted record</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Select``3(SurrealDb.Net.Models.RecordIdRange{``0,``1},System.Threading.CancellationToken)">
+            <summary>
+            Selects a range of records.
+            </summary>
+            <typeparam name="TStart">The type of the left/start bound range limit</typeparam>
+            <typeparam name="TEnd">The type of the right/end bound range limit</typeparam>
+            <typeparam name="TOutput">The type of the record</typeparam>
+            <param name="recordIdRange">The record id range.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of extracted records</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Set(System.String,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            Assigns a value as a parameter for this connection.
+            </summary>
+            <param name="key">The name of the parameter.</param>
+            <param name="value">The value of the parameter.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.SignIn(SurrealDb.Net.Models.Auth.RootAuth,System.Threading.CancellationToken)">
+            <summary>
+            Sign in as a root user.
+            </summary>
+            <param name="root">Credentials to sign in as a root user</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.SignIn(SurrealDb.Net.Models.Auth.NamespaceAuth,System.Threading.CancellationToken)">
+            <summary>
+            Sign in as a namespace user.
+            </summary>
+            <param name="nsAuth">Credentials to sign in as a namespace user</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.SignIn(SurrealDb.Net.Models.Auth.DatabaseAuth,System.Threading.CancellationToken)">
+            <summary>
+            Sign in as a database user.
+            </summary>
+            <param name="dbAuth">Credentials to sign in as a database user</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.SignIn``1(``0,System.Threading.CancellationToken)">
+            <summary>
+            Sign in as a scoped user.
+            </summary>
+            <typeparam name="T">Type of the params used in the SIGNIN scope function</typeparam>
+            <param name="scopeAuth">Credentials to sign in as a scoped user</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The JSON Web Token that can be used to authenticate the user</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.SignUp``1(``0,System.Threading.CancellationToken)">
+            <summary>
+            Sign up a new scoped user.
+            </summary>
+            <typeparam name="T">Type of the params used in the SIGNUP scope function</typeparam>
+            <param name="scopeAuth">Credentials to sign up as a scoped user</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The JSON Web Token that can be used to authenticate the user</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Unset(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Removes a parameter from this connection.
+            </summary>
+            <param name="key">The name of the parameter.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Update``1(``0,System.Threading.CancellationToken)">
+            <summary>
+            Updates the specified record in the database.
+            </summary>
+            <typeparam name="T">The type of the record to update.</typeparam>
+            <param name="data">The record to update.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The updated record.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Update``2(SurrealDb.Net.Models.StringRecordId,``0,System.Threading.CancellationToken)">
+            <summary>
+            Updates the specified record in the database.
+            </summary>
+            <typeparam name="TData">The type of data contained in the record.</typeparam>
+            <typeparam name="TOutput">The type of the record updated.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="data">The record to update.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The updated record.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Update``1(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            Updates all records in the database.
+            </summary>
+            <typeparam name="T">The type of the record to update.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="data">The record to create or update.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of updated records.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Upsert``1(``0,System.Threading.CancellationToken)">
+            <summary>
+            Updates or creates the specified record in the database.
+            </summary>
+            <typeparam name="T">The type of the record to create.</typeparam>
+            <param name="data">The record to create or update.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created or updated.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Upsert``2(SurrealDb.Net.Models.StringRecordId,``0,System.Threading.CancellationToken)">
+            <summary>
+            Updates or creates the specified record in the database.
+            </summary>
+            <typeparam name="TData">The type of data contained in the record.</typeparam>
+            <typeparam name="TOutput">The type of the record created.</typeparam>
+            <param name="recordId">The record id.</param>
+            <param name="data">The record to create or update.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The record created or updated.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Upsert``1(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            Updates or creates all records in the database.
+            </summary>
+            <typeparam name="T">The type of the record to upsert.</typeparam>
+            <param name="table">The name of the database table.</param>
+            <param name="data">The record to create or update.</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The list of created or updated records.</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Use(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Switch to a specific namespace and database.
+            </summary>
+            <param name="ns">Name of the namespace</param>
+            <param name="db">Name of the database</param>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="M:SurrealDb.Net.ISurrealDbClient.Version(System.Threading.CancellationToken)">
+            <summary>
+            Retrieve the version of the SurrealDB instance.
+            </summary>
+            <param name="cancellationToken">The cancellationToken enables graceful cancellation of asynchronous operations</param>
+            <returns>The version of the SurrealDB instance</returns>
+            <exception cref="T:System.OperationCanceledException"></exception>
+            <exception cref="T:System.Net.Http.HttpRequestException"></exception>
+            <exception cref="T:System.InvalidOperationException"></exception>
+            <exception cref="T:SurrealDb.Net.Exceptions.SurrealDbException"></exception>
+        </member>
+        <member name="T:Microsoft.Extensions.DependencyInjection.ServiceCollectionExtensions">
+            <summary>
+            Extensions to register SurrealDB services.
+            Registers <see cref="T:SurrealDb.Net.ISurrealDbClient"/> as a singleton instance.
+            Registers <see cref="T:System.Net.Http.IHttpClientFactory"/> for HTTP requests.
+            </summary>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.ServiceCollectionExtensions.AddSurreal(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,Microsoft.Extensions.DependencyInjection.ServiceLifetime,System.Action{Dahomey.Cbor.CborOptions})">
+            <summary>
+            Registers SurrealDB services from a ConnectionString.
+            </summary>
+            <param name="services">Service collection.</param>
+            <param name="connectionString">Connection string to a SurrealDB instance.</param>
+            <param name="lifetime">Service lifetime to register services under. Default value is <see cref="F:Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>.</param>
+            <param name="configureCborOptions">An optional action to configure <see cref="T:Dahomey.Cbor.CborOptions"/>.</param>
+            <returns>Service collection</returns>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.ServiceCollectionExtensions.AddSurreal``1(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,Microsoft.Extensions.DependencyInjection.ServiceLifetime,System.Action{Dahomey.Cbor.CborOptions})">
+            <summary>
+            Registers SurrealDB services from a ConnectionString.
+            </summary>
+            <typeparam name="T">Type of <see cref="T:SurrealDb.Net.ISurrealDbClient"/> to register.</typeparam>
+            <param name="services">Service collection.</param>
+            <param name="connectionString">Connection string to a SurrealDB instance.</param>
+            <param name="lifetime">Service lifetime to register services under. Default value is <see cref="F:Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>.</param>
+            <param name="configureCborOptions">An optional action to configure <see cref="T:Dahomey.Cbor.CborOptions"/>.</param>
+            <returns>Service collection</returns>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.ServiceCollectionExtensions.AddSurreal(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Microsoft.Extensions.DependencyInjection.SurrealDbOptionsBuilder},Microsoft.Extensions.DependencyInjection.ServiceLifetime)">
+            <summary>
+            Registers SurrealDB services with the specified configuration.
+            </summary>
+            <param name="services">Service collection.</param>
+            <param name="configureOptions">A delegate that is used to configure a <see cref="T:Microsoft.Extensions.DependencyInjection.SurrealDbOptionsBuilder"/>.</param>
+            <param name="lifetime">Service lifetime to register services under. Default value is <see cref="F:Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>.</param>
+            <returns>Service collection</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.ServiceCollectionExtensions.AddSurreal(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.DependencyInjection.SurrealDbOptions,Microsoft.Extensions.DependencyInjection.ServiceLifetime,System.Action{Dahomey.Cbor.CborOptions})">
+            <summary>
+            Registers SurrealDB services with the specified configuration.
+            </summary>
+            <param name="services">Service collection.</param>
+            <param name="configuration">Configuration options.</param>
+            <param name="lifetime">Service lifetime to register services under. Default value is <see cref="F:Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>.</param>
+            <param name="configureCborOptions">An optional action to configure <see cref="T:Dahomey.Cbor.CborOptions"/>.</param>
+            <returns>Service collection</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.ServiceCollectionExtensions.AddSurreal``1(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.DependencyInjection.SurrealDbOptions,Microsoft.Extensions.DependencyInjection.ServiceLifetime,System.Action{Dahomey.Cbor.CborOptions})">
+            <summary>
+            Registers SurrealDB services with the specified configuration.
+            </summary>
+            <typeparam name="T">Type of <see cref="T:SurrealDb.Net.ISurrealDbClient"/> to register.</typeparam>
+            <param name="services">Service collection.</param>
+            <param name="configuration">Configuration options.</param>
+            <param name="lifetime">Service lifetime to register services under. Default value is <see cref="F:Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>.</param>
+            <param name="configureCborOptions">An optional action to configure <see cref="T:Dahomey.Cbor.CborOptions"/>.</param>
+            <returns>Service collection</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Endpoint">
+            <summary>
+            Endpoint of the SurrealDB instance.<br /><br />
+            Examples:<br />
+            - http://127.0.0.1:8000<br />
+            - wss://cloud.surrealdb.com
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Namespace">
+            <summary>
+            Default namespace to use when new <see cref="T:SurrealDb.Net.ISurrealDbClient"/> is generated.
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Database">
+            <summary>
+            Default database to use when new <see cref="T:SurrealDb.Net.ISurrealDbClient"/> is generated.
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Username">
+            <summary>
+            Default username (Root auth) to use when new <see cref="T:SurrealDb.Net.ISurrealDbClient"/> is generated.
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Password">
+            <summary>
+            Default password (Root auth) to use when new <see cref="T:SurrealDb.Net.ISurrealDbClient"/> is generated.
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Token">
+            <summary>
+            Default token (User auth) to use when new <see cref="T:SurrealDb.Net.ISurrealDbClient"/> is generated.
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.NamingPolicy">
+            <summary>
+            Naming policy used to interact with the database.
+            It will change the default NamingPolicy of the <see cref="T:SurrealDb.Net.ISurrealDbClient"/> used.
+            Valid options are "CamelCase", "SnakeCaseLower", "SnakeCaseUpper", "KebabCaseLower" and "KebabCaseUpper".
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.IsEmbedded">
+            <summary>
+            Indicates if the options are made to use a SurrealDB instance in embedded mode.
+            Supported embedded modes are <c>mem://</c>.
+            </summary>
+        </member>
+        <member name="P:Microsoft.Extensions.DependencyInjection.SurrealDbOptions.Logging">
+            <summary>
+            Logging options used for the SurrealDB client.
+            </summary>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.SurrealDbOptionsBuilder.FromConnectionString(System.String)">
+            <summary>
+            Parses the connection string and set the configuration accordingly.
+            </summary>
+            <param name="connectionString">Connection string to connect to a SurrealDB instance.</param>
+            <exception cref="T:System.ArgumentException"></exception>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.SurrealDbOptionsBuilder.EnableSensitiveDataLogging(System.Boolean)">
+            <summary>
+            Enables application data to be included in logs.
+            This typically include parameter values set for SURQL queries, and parameters sent via any client methods.
+            You should only enable this flag if you have the appropriate security measures in place based on the sensitivity of this data.
+            </summary>
+            <param name="sensitiveDataLoggingEnabled">If <c>true</c>, then sensitive data is logged.</param>
+            <returns>The same builder instance so that multiple calls can be chained.</returns>
+        </member>
+    </members>
+</doc>

@@ -21,11 +21,6 @@ public record ExtractTextAndIndex
     public required DateTimeOffset Version { get; init; }
 
     /// <summary>
-    /// Gets the unique identifier of the file entry.
-    /// </summary>
-    public required Guid FileEntryId { get; init; }
-
-    /// <summary>
     /// Gets the full path to the restored file on disk.
     /// </summary>
     public required string RestoredFilePath { get; init; }
@@ -34,4 +29,9 @@ public record ExtractTextAndIndex
     /// Gets the original file path in the backup.
     /// </summary>
     public required string OriginalFilePath { get; init; }
+
+    /// <summary>
+    /// Gets the file entry identifier for direct O(1) database lookup.
+    /// </summary>
+    public Guid? FileEntryId { get; init; }
 }

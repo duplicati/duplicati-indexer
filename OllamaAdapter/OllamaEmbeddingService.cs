@@ -39,14 +39,26 @@ public class OllamaEmbeddingService : IEmbeddingService
             throw new ArgumentException("Text cannot be null or empty.", nameof(text));
         }
 
-        _logger.LogDebug("Generating embedding using Ollama model {Model}", _model);
+        var embeddings = await GenerateEmbeddingsAsync(new[] { text }, cancellationToken);
+        return embeddings[0];
+    }
 
-        var url = $"{_baseUrl}/api/embeddings";
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<float[]>> GenerateEmbeddingsAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+    {
+        if (texts == null || texts.Count == 0)
+        {
+            return Array.Empty<float[]>();
+        }
+
+        _logger.LogDebug("Generating {Count} embeddings using Ollama model {Model}", texts.Count, _model);
+
+        var url = $"{_baseUrl}/api/embed";
 
         var requestBody = new
         {
             model = _model,
-            prompt = text
+            input = texts
         };
 
         var response = await _httpClient.PostAsJsonAsync(url, requestBody, cancellationToken);
@@ -61,15 +73,17 @@ public class OllamaEmbeddingService : IEmbeddingService
 
         var responseContent = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         
-        if (!responseContent.TryGetProperty("embedding", out var embeddingProperty))
+        if (!responseContent.TryGetProperty("embeddings", out var embeddingsProperty))
         {
-            throw new InvalidOperationException("Ollama response does not contain 'embedding' property.");
+            throw new InvalidOperationException("Ollama response does not contain 'embeddings' property.");
         }
 
-        var embedding = embeddingProperty.EnumerateArray().Select(x => x.GetSingle()).ToArray();
+        var embeddings = embeddingsProperty.EnumerateArray()
+            .Select(e => e.EnumerateArray().Select(v => v.GetSingle()).ToArray())
+            .ToArray();
 
-        _logger.LogDebug("Successfully generated embedding with {DimensionCount} dimensions using Ollama", embedding.Length);
+        _logger.LogDebug("Successfully generated {Count} embeddings using Ollama", embeddings.Length);
 
-        return embedding;
+        return embeddings;
     }
 }

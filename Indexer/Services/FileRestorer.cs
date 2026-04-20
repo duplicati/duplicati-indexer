@@ -31,13 +31,13 @@ public class FileRestorer
     /// <returns>True if restoration was successful, otherwise false.</returns>
     /// <exception cref="ArgumentException">Thrown when target directory or backend URL is null or empty.</exception>
     public async Task<bool> RestoreFilesAsync(
-        List<BackupFileEntry> filesToRestore,
+        List<string> filePaths,
         string targetDirectory,
         string backendUrl,
         string? passphrase,
         string time)
     {
-        if (filesToRestore == null || !filesToRestore.Any())
+        if (filePaths == null || !filePaths.Any())
         {
             _logger.LogInformation("No files to restore.");
             return true;
@@ -50,7 +50,7 @@ public class FileRestorer
             throw new ArgumentException("Backend URL cannot be null or empty.", nameof(backendUrl));
 
         _logger.LogInformation("Restoring {Count} files to {TargetDirectory} from time {Time}",
-            filesToRestore.Count, targetDirectory, time);
+            filePaths.Count, targetDirectory, time);
 
         // Ensure target directory exists
         if (!Directory.Exists(targetDirectory))
@@ -62,7 +62,7 @@ public class FileRestorer
         var args = new List<string> { "restore", backendUrl };
 
         // Add files to restore
-        args.AddRange(filesToRestore.Select(file => file.Path));
+        args.AddRange(filePaths);
 
         // Add options
         args.Add($"--restore-path={targetDirectory}");
@@ -125,7 +125,7 @@ public class FileRestorer
 
             _logger.LogDebug("Duplicati restore completed successfully ({ExitCode}). Output: {Output}", process.ExitCode, outputBuilder.ToString());
 
-            _logger.LogInformation("Successfully restored {Count} files.", filesToRestore.Count);
+            _logger.LogInformation("Successfully restored {Count} files.", filePaths.Count);
             return true;
         }
         catch (Exception ex)

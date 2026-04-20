@@ -69,6 +69,28 @@ export class QueryService {
     return this.http.get<SessionDetailsResponse>(`/api/rag/sessions/${sessionId}`);
   }
 
+  streamDatabaseStats(): Observable<{ documentCount: number, sparseCount: number, metadataCount: number }> {
+    return new Observable(observer => {
+      const eventSource = new EventSource('/api/stats/stream');
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const stats = JSON.parse(event.data);
+          observer.next(stats);
+        } catch (e) {
+          console.error('Failed to parse database stats stream chunk:', e);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        // SSE natively auto-reconnects, just log warnings if connection hiccups
+        console.warn('Realtime database stats stream warning:', err);
+      };
+
+      return () => eventSource.close();
+    });
+  }
+
   streamQuery(request: RagQueryRequest): Observable<RagQueryEvent> {
     return new Observable<RagQueryEvent>(observer => {
       const abortController = new AbortController();

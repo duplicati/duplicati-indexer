@@ -20,7 +20,8 @@ import {
   ShipList,
   ShipSidenav,
   ShipSpinner,
-  ShipDialogService
+  ShipDialogService,
+  ShipChip
 } from '@ship-ui/core';
 import { ConfirmDialogComponent } from './components/confirm-dialog/confirm-dialog.component';
 import { Subscription } from 'rxjs';
@@ -54,6 +55,7 @@ export interface ConversationMessage {
     ShipSpinner,
     ShipFormField,
     ShipDivider,
+    ShipChip,
 
     LogoComponent,
   ],
@@ -75,8 +77,12 @@ export default class App implements AfterViewChecked, OnDestroy, OnInit {
   isNavOpen = signal(true);
   isDarkMode = signal(false);
   sidenavType = signal('simple');
+  dbCount = signal(0);
+  sparseCount = signal(0);
+  metadataCount = signal(0);
 
   private querySubscription?: Subscription;
+  private statsSubscription?: Subscription;
   private scrollPendingCount = 0;
   private scrollTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastConversationLength = 0;
@@ -95,11 +101,23 @@ export default class App implements AfterViewChecked, OnDestroy, OnInit {
 
   ngOnInit(): void {
     this.fetchSessions();
+    this.subscribeDbStats();
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat');
     if (chatId) {
       this.loadSession(chatId);
     }
+  }
+
+  subscribeDbStats(): void {
+    this.statsSubscription = this.queryService.streamDatabaseStats().subscribe({
+      next: (stats) => {
+        this.dbCount.set(stats.documentCount);
+        this.sparseCount.set(stats.sparseCount);
+        this.metadataCount.set(stats.metadataCount);
+      },
+      error: (err) => console.error('Failed to stream DB stats organically', err)
+    });
   }
 
   ngAfterViewChecked(): void {
@@ -124,6 +142,7 @@ export default class App implements AfterViewChecked, OnDestroy, OnInit {
     if (this.scrollTimeout) {
       clearTimeout(this.scrollTimeout);
     }
+    this.statsSubscription?.unsubscribe();
   }
 
   private getLastResponseText(): string {

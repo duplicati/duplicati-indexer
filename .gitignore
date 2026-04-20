@@ -10,6 +10,7 @@
 *.userosscache
 *.sln.docstates
 .env
+verbose_ingest.txt
 
 testdata/*
 
@@ -414,3 +415,5 @@ local.environmentvariables.json*
 /testdata/backupdest/
 /testdata/backupdb.sqlite
 /testdata/downloads/
+.gemini/
+.llama_cluster.pids

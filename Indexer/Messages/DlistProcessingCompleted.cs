@@ -25,4 +25,9 @@ public record DlistProcessingCompleted
     /// Gets the number of new file entries added from this dlist.
     /// </summary>
     public required long NewFilesAdded { get; init; }
+
+    /// <summary>
+    /// Optional limit on the number of files to process natively bounding structural evaluation streams.
+    /// </summary>
+    public int? MaxFileCount { get; init; }
 }

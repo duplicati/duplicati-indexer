@@ -15,6 +15,14 @@ public class UnstructuredIndexer : IContentIndexer
     private readonly ILogger<UnstructuredIndexer> _logger;
     private readonly long _maxFileSizeBytes;
 
+    private static readonly HashSet<string> _plainTextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".markdown", ".csv", ".json", ".xml", ".cs", ".js", ".ts", ".jsx", ".tsx",
+        ".py", ".rb", ".php", ".java", ".go", ".rs", ".cpp", ".c", ".h", ".hpp", ".sql", ".sh",
+        ".bash", ".ps1", ".bat", ".cmd", ".yaml", ".yml", ".toml", ".ini", ".conf", ".config",
+        ".css", ".scss", ".sass", ".less", ".log"
+    };
+
     /// <summary>
     /// Initializes a new instance of the <see cref="UnstructuredIndexer"/> class.
     /// </summary>
@@ -46,6 +54,22 @@ public class UnstructuredIndexer : IContentIndexer
                 filePath, _maxFileSizeBytes, fileInfo.Length);
             throw new InvalidOperationException($"File size exceeds maximum limit of {_maxFileSizeBytes} bytes.");
         }
+
+        // --- PLAINTEXT BYPASS (HUGE PERFORMANCE OPTIMIZATION) ---
+        var extension = Path.GetExtension(filePath);
+        if (_plainTextExtensions.Contains(extension) || string.IsNullOrEmpty(extension) || extension == ".")
+        {
+            _logger.LogInformation("Plaintext extension '{Extension}' detected. Bypassing heavy Python REST API locally natively...", extension);
+            try
+            {
+                return await File.ReadAllTextAsync(filePath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to read plaintext file {FilePath} organically natively, falling back to unstructured HTTP API...", filePath);
+            }
+        }
+        // --------------------------------------------------------
 
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true);
         using var content = new MultipartFormDataContent();
