@@ -32,20 +32,24 @@ for MODEL in "${MODEL_ARRAY[@]}"; do
                  # If it exists but with the wrong params, seamlessly eject it from VRAM securely first
                  if [ -n "$ACTIVE_CTX" ]; then
                      echo -e "  \033[0;33m⚠ [LMStudio]\033[0m Ejecting stale \033[1;33m$MODEL\033[0m matrix from VRAM (Found Context: ${ACTIVE_CTX} / Target: ${CHUNK_SIZE})..."
-                     lms unload "$IDENTIFIER" -y > /dev/null 2>&1
+                     lms unload "$IDENTIFIER" > /dev/null 2>&1
+                     sleep 1
                  fi
                  
                  echo -e "  \033[0;36m[LMStudio]\033[0m Pinning \033[1;33m$MODEL\033[0m natively to Metal buffer (Context/Batch: ${CHUNK_SIZE})..."
                  
-                 LMS_OUT=$(lms load "$BASE_MODEL" --identifier "$IDENTIFIER" -c "$CHUNK_SIZE" -y 2>&1)
+                 # We explicitly bypass `-c` argument here because LMStudio 0.2.x+ CLI actively overwrites
+                 # the entire nested GGUF model layout (falling back rigidly to `n_ctx=512` for NLP graphs)
+                 # instead of dynamically applying user GUI configuration parameters natively.
+                 LMS_OUT=$(lms load "$BASE_MODEL" --identifier "$IDENTIFIER" -y 2>&1)
                  LMS_CODE=$?
                  
                  if [ $LMS_CODE -eq 0 ]; then
                      echo -e "  \033[0;32m✔ Matrix bound successfully.\033[0m"
-                     echo "$LMS_OUT" | sed 's/^/      /'
+                     echo "$LMS_OUT" | awk '{print "      " $0}'
                  else
                      echo -e "  \033[0;31m✖ Error allocating matrix bindings:\033[0m"
-                     echo "$LMS_OUT" | sed 's/^/      /'
+                     echo "$LMS_OUT" | awk '{print "      " $0}'
                      exit $LMS_CODE
                  fi
             fi

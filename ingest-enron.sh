@@ -621,7 +621,7 @@ while true; do
                 DASHBOARD+="  ${CYAN}[3/3] NLP Vectorization${NC} ▶ ${YELLOW}${FRAME}${NC} Initializing payload extraction & chunking... ${BLUE}⏱ ${P3_TIMER}${NC}\033[K\n"
             fi
             ((LINES_RENDERED++))
-            if [ -n "$CHUNK_LOG" ]; then
+            if [ -n "$CHUNK_LOG" ] && ! { [ "$BFE_COUNT" -gt 0 ] && [ "$INDEXED_FILE_COUNT" -ge "$BFE_COUNT" ] && [ "$QUEUED_CHUNKS" -eq 0 ]; }; then
                 format_log_box "$CHUNK_LOG"
                 DASHBOARD+="$BOX_STRING"
                 ((LINES_RENDERED += BOX_LINES))
