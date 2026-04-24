@@ -49,14 +49,92 @@ public class ChatGPTService : ILLMClient
 
         var messageList = messages.Select(m => new { role = ToRoleString(m.Role), content = m.Content }).ToArray();
 
-        var requestBody = new
+        object requestBody;
+        if (_apiKey == "lm-studio")
         {
-            model = model,
-            messages = messageList
-        };
+            bool isModelLoaded = false;
+            try
+            {
+                var v0ModelsUrl = url.Replace("/v1/chat/completions", "/api/v0/models");
+                var modelsResponse = await _httpClient.GetAsync(v0ModelsUrl, cancellationToken);
+                if (modelsResponse.IsSuccessStatusCode)
+                {
+                    var modelsJson = await modelsResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+                    if (modelsJson.TryGetProperty("data", out var dataArray))
+                    {
+                        foreach (var m in dataArray.EnumerateArray())
+                        {
+                            if (m.TryGetProperty("state", out var stateProp) && stateProp.GetString() == "loaded")
+                            {
+                                if (m.TryGetProperty("type", out var typeProp))
+                                {
+                                    var typeStr = typeProp.GetString();
+                                    if (typeStr == "llm" || typeStr == "vlm")
+                                    {
+                                        isModelLoaded = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to inspect LM Studio loaded state via /api/v0/models");
+            }
 
-        var response = await _httpClient.PostAsJsonAsync(url, requestBody, cancellationToken);
-        response.EnsureSuccessStatusCode();
+            if (isModelLoaded)
+            {
+                // Already loaded, act as proxy without triggering JIT
+                requestBody = new
+                {
+                    model = model,
+                    messages = messageList
+                };
+            }
+            else
+            {
+                // Not loaded, force JIT load with requested context bounds
+                requestBody = new
+                {
+                    model = model,
+                    messages = messageList,
+                    n_ctx = 8192,
+                    n_batch = 8192
+                };
+            }
+        }
+        else
+        {
+            requestBody = new
+            {
+                model = model,
+                messages = messageList
+            };
+        }
+
+        HttpResponseMessage response = null;
+        int maxRetries = 2;
+        for (int i = 0; i < maxRetries; i++)
+        {
+            response = await _httpClient.PostAsJsonAsync(url, requestBody, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                
+                // LM Studio throws a 400 Bad Request when it JIT unloads/reloads a model due to setting changes
+                if (_apiKey == "lm-studio" && errorBody.Contains("Model reloaded", StringComparison.OrdinalIgnoreCase) && i < maxRetries - 1)
+                {
+                    _logger.LogWarning("LM Studio reloaded the model. Retrying the completion request...");
+                    continue;
+                }
+                
+                throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}). Error: {errorBody}");
+            }
+            break; // Success
+        }
 
         var responseContent = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         var content = responseContent.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();

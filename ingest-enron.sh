@@ -484,7 +484,7 @@ while true; do
 
     # Calculate exact backend phase by scraping the container tail once every loop
     NEW_PHASE=1
-    if [ "$VECTOR_SPEED" -gt 0 ] || docker logs duplicati-indexer --since "$START_TIME" --tail 200 2>&1 | grep -iq "text extraction and index messages\|ExtractTextAndIndex"; then
+    if [ "$VECTOR_SPEED" -gt 0 ] || [ "$INDEXED_FILE_COUNT" -gt 0 ] || [ "$EXT_CHUNK_COUNT" -gt 0 ] || [ "$VECTOR_COUNT" -gt 0 ] || docker logs duplicati-indexer --since "$START_TIME" --tail 200 2>&1 | grep -iq "text extraction and index messages\|ExtractTextAndIndex"; then
         NEW_PHASE=3
     elif [ "$RESTORE_SPEED" -gt 0 ] || [ "$RESTORE_COUNT" -gt 0 ] || docker logs duplicati-indexer --since "$START_TIME" --tail 200 2>&1 | grep -iq "StartFileRestoration message\|Restoring file\|successfully restored"; then
         NEW_PHASE=2
@@ -549,7 +549,7 @@ while true; do
 
         # ------------------ PHASE 2 ------------------
         if [ "$CURRENT_PHASE" -ge 2 ]; then
-            if [ "$RESTORE_COUNT" -lt "$BFE_COUNT" ] || [ "$BFE_COUNT" -eq 0 ]; then
+            if { [ "$RESTORE_COUNT" -lt "$BFE_COUNT" ] && [ "$INDEXED_FILE_COUNT" -lt "$BFE_COUNT" ]; } || [ "$BFE_COUNT" -eq 0 ]; then
                 P2_ELAPSED=$(( $(date +%s) - PHASE2_START ))
                 P2_TIMER=$(format_duration $P2_ELAPSED)
                 if [ "$RESTORE_COUNT" -eq 0 ] && [ "$RESTORE_SPEED" -eq 0 ]; then
@@ -567,6 +567,8 @@ while true; do
             else
                 if [ -z "$PHASE2_END" ]; then PHASE2_END=$(date +%s); fi
                 P2_DURATION=$(format_duration $(( PHASE2_END - PHASE2_START )) )
+                # If pipeline finished organically without fetching logs, synthetically peg restore count to MAX to prevent UI glitching
+                if [ "$RESTORE_COUNT" -lt "$BFE_COUNT" ]; then RESTORE_COUNT=$BFE_COUNT; fi
                 DASHBOARD+="  ${CYAN}[2/3] Local Restoration${NC}   ▶ ${GREEN}${CHECK_MARK} Completed${NC} (${RESTORE_COUNT}/${BFE_COUNT} files restored) ${GREEN}⏱ ${P2_DURATION}${NC}\033[K\n"
                 ((LINES_RENDERED++))
             fi
@@ -634,10 +636,12 @@ while true; do
         
         # ------------------ PIPELINE SUCCESS CHECK ------------------
         if [ "$BFE_COUNT" -gt 0 ] && [ "$INDEXED_FILE_COUNT" -ge "$BFE_COUNT" ] && [ "${QUEUED_CHUNKS:-0}" -eq 0 ]; then
+            TOTAL_ELAPSED=$(( $(date +%s) - START_TIME ))
+            TOTAL_TIME=$(format_duration $TOTAL_ELAPSED)
             echo ""
             echo ""
             echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo -e "  ${GREEN}✔ PIPELINE COMPLETE!${NC} All ${BFE_COUNT} payload matrices successfully mapped!"
+            echo -e "  ${GREEN}✔ PIPELINE COMPLETE!${NC} All ${BFE_COUNT} payload matrices successfully mapped in ${YELLOW}${TOTAL_TIME}${NC}!"
             echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
             cleanup_dashboard

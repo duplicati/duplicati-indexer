@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using DuplicatiIndexer.Data.Entities;
@@ -25,7 +26,7 @@ public class ThreatStateMonitorTests
             new() { Path = "/images/photo.png" }
         };
 
-        var result = _sut.CheckForCanaryFiles(files);
+        var result = _sut.CheckForCanaryFiles(files.Select(f => f.Path));
         result.Should().BeFalse();
     }
 
@@ -41,7 +42,7 @@ public class ThreatStateMonitorTests
             new() { Path = canaryPath }
         };
 
-        var result = _sut.CheckForCanaryFiles(files);
+        var result = _sut.CheckForCanaryFiles(files.Select(f => f.Path));
         result.Should().BeTrue();
     }
 

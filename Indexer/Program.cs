@@ -349,6 +349,12 @@ app.MapGet("/api/stats", (DbStatsLiveMonitor monitor) =>
         indexedFileCount = monitor.IndexedFileCount
     }));
 
+app.MapDelete("/api/stats", (DbStatsLiveMonitor monitor) => 
+{
+    monitor.Reset();
+    return Results.Ok(new { message = "Stats cache successfully reset." });
+});
+
 // API endpoint to inject a BackupVersionCreated message via Wolverine
 app.MapPost("/api/messages/backup-version-created", async (BackupVersionCreated message, IMessageBus bus) =>
 {
@@ -556,6 +562,16 @@ app.MapPost("/api/rag/query/stream", async (RagQueryRequest request, IRagQuerySe
 
     var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
+    // Emit session_init event so the frontend can immediately navigate to the session URL
+    var initEvent = new RagQueryEvent
+    {
+        EventType = "session_init",
+        Content = actualSessionId.ToString()
+    };
+    var initJson = JsonSerializer.Serialize(initEvent, jsonOptions);
+    await context.Response.WriteAsync($"data: {initJson}\n\n");
+    await context.Response.Body.FlushAsync();
+
     Func<RagQueryEvent, Task> onEvent = async (e) =>
     {
         var json = JsonSerializer.Serialize(e, jsonOptions);
@@ -598,6 +614,13 @@ app.MapGet("/api/rag/v2/sessions/{sessionId:guid}", async (Guid sessionId, RagQu
             h.QueryTimestamp,
             h.ResponseTimestamp,
             h.Events)).ToList()));
+});
+
+// API endpoint to revert a session to a specific message
+app.MapDelete("/api/rag/sessions/{sessionId:guid}/revert/{messageId:guid}", async (Guid sessionId, Guid messageId, RagQuerySessionService sessionService, CancellationToken cancellationToken) =>
+{
+    await sessionService.RevertSessionToMessageAsync(sessionId, messageId, cancellationToken);
+    return Results.Ok();
 });
 
 // API endpoints for file metadata queries
@@ -646,6 +669,32 @@ app.MapGet("/api/files/list", async (string directory, Guid? backupSourceId, boo
     var results = await queryService.ListDirectoryAsync(directory, backupSourceId, recursive ?? false, cancellationToken);
 
     return Results.Ok(new FileListResponse(directory, recursive ?? false, results.Count, results));
+});
+
+// Get file content reconstructed from vector chunks
+app.MapGet("/api/files/content", async (string path, IFileMetadataQueryService queryService, ISurrealRepository repository, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return Results.BadRequest(new { error = "Path parameter is required" });
+
+    // 1. Find the file's GUID
+    var file = await queryService.FindFileAsync(path, null, cancellationToken);
+    if (file == null)
+        return Results.NotFound(new { error = "File not found in index" });
+
+    // 2. Fetch chunks from vector_chunk table
+    var sql = "SELECT Content, ChunkIndex FROM vector_chunk WHERE FileId = $fileId ORDER BY ChunkIndex ASC LIMIT 1000";
+    var parameters = new Dictionary<string, object> { { "fileId", file.Id.ToString() } };
+    
+    var chunks = await repository.QueryAsync<DuplicatiIndexer.SurrealAdapter.SurrealVectorStore.RawSearchResult>(sql, parameters, cancellationToken);
+    
+    if (chunks == null || chunks.Count == 0)
+        return Results.NotFound(new { error = "File content chunks not found in vector index" });
+
+    // 3. Concatenate text
+    var content = string.Join("\n", chunks.Select(c => c.Content));
+
+    return Results.Ok(new { path = file.Path, content = content });
 });
 
 // Get files modified between dates
@@ -752,8 +801,8 @@ public record HistoryItemResponse(
     string OriginalQuery,
     string CondensedQuery,
     string Response,
-    DateTimeOffset QueryTimestamp,
-    DateTimeOffset ResponseTimestamp,
+    string QueryTimestamp,
+    string ResponseTimestamp,
     List<DuplicatiIndexer.Data.Entities.QueryHistoryEvent>? Events
 );
 
@@ -761,8 +810,8 @@ public record HistoryItemResponse(
 public record SessionDetailsResponse(
     Guid Id,
     string Title,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset LastActivityAt,
+    string CreatedAt,
+    string LastActivityAt,
     IReadOnlyList<HistoryItemResponse> History
 );
 

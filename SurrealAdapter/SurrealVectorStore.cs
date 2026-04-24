@@ -125,13 +125,22 @@ public class SurrealVectorStore : IVectorStore
         await _client.RawQuery($"DELETE {TableName} WHERE FileId = '{fileId}'");
     }
 
+    public class RawSearchResult
+    {
+        public string? id { get; set; }
+        public string? FileId { get; set; }
+        public int ChunkIndex { get; set; }
+        public string? Content { get; set; }
+        public double score { get; set; }
+    }
+
     public async Task<IEnumerable<SearchResult>> SearchAsync(float[] queryVector, int topK = 5, CancellationToken cancellationToken = default)
     {
         var vectorStr = $"[{string.Join(", ", queryVector)}]";
         var response = await _client.RawQuery($@"
             SELECT 
-                id, 
-                FileId, 
+                type::string(id) AS id, 
+                type::string(FileId) AS FileId, 
                 ChunkIndex, 
                 Content, 
                 vector::similarity::cosine(Vector, {vectorStr}) AS score 
@@ -139,21 +148,21 @@ public class SurrealVectorStore : IVectorStore
             WHERE Vector <|{topK}|> {vectorStr}
             ORDER BY score DESC;
         ");
-        var results = response.GetValue<List<JsonElement>>(0);
+        var results = response.GetValue<List<RawSearchResult>>(0);
         
         if (results == null) return Array.Empty<SearchResult>();
 
         return results.Select((r, i) => new SearchResult
         {
-            Id = r.GetProperty("id").GetString() ?? "",
-            Content = r.GetProperty("Content").GetString() ?? "",
-            Score = r.TryGetProperty("score", out var scoreProp) ? scoreProp.GetDouble() : 0.0,
+            Id = r.id ?? "",
+            Content = r.Content ?? "",
+            Score = r.score,
             Rank = i + 1,
             Source = "vector",
             Metadata = new Dictionary<string, object>
             {
-                { "FileId", r.TryGetProperty("FileId", out var fId) ? fId.GetString() ?? "" : "" },
-                { "ChunkIndex", r.TryGetProperty("ChunkIndex", out var cIdx) ? cIdx.GetInt32() : 0 }
+                { "FileId", r.FileId ?? "" },
+                { "ChunkIndex", r.ChunkIndex }
             }
         }).ToList();
     }

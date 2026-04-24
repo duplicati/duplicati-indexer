@@ -133,11 +133,11 @@ public class FileMetadataQueryService : IFileMetadataQueryService
         }
         else
         {
-            // Exact match or ends-with match for file names
-            // Since EndsWith requires client-side or complex Surreal functions, pulling a batch and filtering
-            sql += " ORDER BY VersionAdded DESC LIMIT 1000";
-            var candidateList = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
-            candidates = candidateList.Where(f => f.Path == pathPattern || f.Path.EndsWith(pathPattern)).Take(1).ToList();
+            // Exact match or ends-with match for file names using SurrealDB native functions
+            // This prevents the LIMIT 1000 from prematurely truncating the dataset before filtering
+            sql += " AND (Path = $pathPattern OR string::ends_with(Path, $pathPattern)) ORDER BY VersionAdded DESC LIMIT 1";
+            parameters.Add("pathPattern", pathPattern);
+            candidates = await _repository.QueryAsync<BackupFileEntry>(sql, parameters, cancellationToken);
         }
 
         var entry = candidates.FirstOrDefault();

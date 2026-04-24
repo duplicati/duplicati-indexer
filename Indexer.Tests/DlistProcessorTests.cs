@@ -80,7 +80,7 @@ public class DlistProcessorTests : IAsyncLifetime
     private DlistProcessor CreateProcessor()
     {
         var logger = _serviceProvider.GetRequiredService<ILogger<DlistProcessor>>();
-        return new DlistProcessor(_repository, logger);
+        return new DlistProcessor(_repository, null!, logger, null!);
     }
 
     /// <summary>
@@ -513,7 +513,7 @@ public class DlistProcessorTests : IAsyncLifetime
             fileEntry.Size.Should().Be(5000);
             fileEntry.LastModified.Should().Be(testTime);
             fileEntry.Hash.Should().Be("abc123hash");
-            fileEntry.VersionAdded.Should().Be(version);
+            fileEntry.VersionAdded.Should().Be(version.UtcDateTime);
             fileEntry.VersionDeleted.Should().BeNull();
             fileEntry.IsIndexed.Should().BeFalse();
         }
@@ -612,13 +612,13 @@ public class DlistProcessorTests : IAsyncLifetime
                 fileHistory.Should().HaveCount(2);
 
                 // First version
-                fileHistory[0].Version.Should().Be(version1);
+                fileHistory[0].Version.Should().Be(version1.UtcDateTime);
                 fileHistory[0].Hash.Should().Be("hash_v1");
                 fileHistory[0].Size.Should().Be(100);
                 fileHistory[0].LastModified.Should().Be(new DateTime(2024, 3, 10, 10, 0, 0, DateTimeKind.Utc));
 
                 // Second version
-                fileHistory[1].Version.Should().Be(version2);
+                fileHistory[1].Version.Should().Be(version2.UtcDateTime);
                 fileHistory[1].Hash.Should().Be("hash_v2");
                 fileHistory[1].Size.Should().Be(150);
                 fileHistory[1].LastModified.Should().Be(new DateTime(2024, 3, 11, 15, 30, 0, DateTimeKind.Utc));

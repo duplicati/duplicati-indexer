@@ -1,0 +1,4 @@
+{
+  "sql": "SELECT * FROM queryhistoryitem WHERE SessionId = $sessionId ORDER BY QueryTimestamp ASC",
+  "vars": { "sessionId": "5467e96b-f50c-5049-8f5e-6b3bfd461c8b" }
+}

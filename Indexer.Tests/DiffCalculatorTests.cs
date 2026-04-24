@@ -12,8 +12,8 @@ public class DiffCalculatorTests
     {
         // Arrange
         var backupSourceId = Guid.NewGuid();
-        var currentVersion = new DateTimeOffset(2024, 3, 12, 14, 30, 0, TimeSpan.Zero);
-        var previousVersion = new DateTimeOffset(2024, 3, 11, 10, 0, 0, TimeSpan.Zero);
+        var currentVersion = new DateTime(2024, 3, 12, 14, 30, 0, DateTimeKind.Utc);
+        var previousVersion = new DateTime(2024, 3, 11, 10, 0, 0, DateTimeKind.Utc);
 
         var fileEntries = new List<BackupFileEntry>
         {
@@ -40,8 +40,8 @@ public class DiffCalculatorTests
     {
         // Arrange
         var backupSourceId = Guid.NewGuid();
-        var currentVersion = new DateTimeOffset(2024, 3, 12, 14, 30, 0, TimeSpan.Zero);
-        var previousVersion = new DateTimeOffset(2024, 3, 11, 10, 0, 0, TimeSpan.Zero);
+        var currentVersion = new DateTime(2024, 3, 12, 14, 30, 0, DateTimeKind.Utc);
+        var previousVersion = new DateTime(2024, 3, 11, 10, 0, 0, DateTimeKind.Utc);
 
         var fileEntries = new List<BackupFileEntry>
         {
@@ -64,7 +64,7 @@ public class DiffCalculatorTests
     {
         // Arrange
         var backupSourceId = Guid.NewGuid();
-        var currentVersion = new DateTimeOffset(2024, 3, 12, 14, 30, 0, TimeSpan.Zero);
+        var currentVersion = new DateTime(2024, 3, 12, 14, 30, 0, DateTimeKind.Utc);
         var previousVersion = DateTimeOffset.MinValue;
 
         var fileEntries = new List<BackupFileEntry>
@@ -87,8 +87,8 @@ public class DiffCalculatorTests
     {
         // Arrange
         var backupSourceId = Guid.NewGuid();
-        var currentVersion = new DateTimeOffset(2024, 3, 12, 14, 30, 0, TimeSpan.Zero);
-        var previousVersion = new DateTimeOffset(2024, 3, 11, 10, 0, 0, TimeSpan.Zero);
+        var currentVersion = new DateTime(2024, 3, 12, 14, 30, 0, DateTimeKind.Utc);
+        var previousVersion = new DateTime(2024, 3, 11, 10, 0, 0, DateTimeKind.Utc);
 
         var fileEntries = new List<BackupFileEntry>
         {
@@ -109,9 +109,9 @@ public class DiffCalculatorTests
     {
         // Arrange
         var backupSourceId = Guid.NewGuid();
-        var currentVersion = new DateTimeOffset(2024, 3, 12, 14, 30, 0, TimeSpan.Zero);
-        var previousVersion = new DateTimeOffset(2024, 3, 11, 10, 0, 0, TimeSpan.Zero);
-        var laterVersion = new DateTimeOffset(2024, 3, 13, 10, 0, 0, TimeSpan.Zero);
+        var currentVersion = new DateTime(2024, 3, 12, 14, 30, 0, DateTimeKind.Utc);
+        var previousVersion = new DateTime(2024, 3, 11, 10, 0, 0, DateTimeKind.Utc);
+        var laterVersion = new DateTime(2024, 3, 13, 10, 0, 0, DateTimeKind.Utc);
 
         var fileEntries = new List<BackupFileEntry>
         {
@@ -134,7 +134,7 @@ public class DiffCalculatorTests
         // Arrange
         var backupSourceId = Guid.NewGuid();
         var otherBackupSourceId = Guid.NewGuid();
-        var currentVersion = new DateTimeOffset(2024, 3, 12, 14, 30, 0, TimeSpan.Zero);
+        var currentVersion = new DateTime(2024, 3, 12, 14, 30, 0, DateTimeKind.Utc);
         var previousVersion = DateTimeOffset.MinValue;
 
         var fileEntries = new List<BackupFileEntry>

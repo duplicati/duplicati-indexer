@@ -46,6 +46,12 @@ public class AgentAction
     public JsonElement ActionInputElement { get; set; }
 
     /// <summary>
+    /// Gets or sets an optional list of relevant file paths discovered during the step.
+    /// </summary>
+    [JsonPropertyName("relevant_files")]
+    public List<string>? RelevantFiles { get; set; }
+
+    /// <summary>
     /// Gets the action input as a string (handles both string and object JSON values).
     /// </summary>
     public string ActionInput => ActionInputElement.ValueKind switch
@@ -83,6 +89,11 @@ public class ReActStep
     public string Action { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the relevant files found in this step.
+    /// </summary>
+    public List<string>? RelevantFiles { get; set; }
+
+    /// <summary>
     /// Gets or sets the action input.
     /// </summary>
     public string ActionInput { get; set; } = string.Empty;
@@ -103,6 +114,7 @@ public class ReActQueryService : IRagQueryService
     private readonly IHybridSearchService _hybridSearchService;
     private readonly IFileMetadataQueryService _fileMetadataQueryService;
     private readonly RagQuerySessionService _sessionService;
+    private readonly Data.ISurrealRepository _repository;
     private readonly ILogger<ReActQueryService> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
 
@@ -129,7 +141,7 @@ Use query_file_metadata when the user asks about:
 - Files existing at specific backup times
 - Questions like ""when was file xxx last modified?"" or ""show me the version history of file yyy""
 
-You must respond in the following JSON format:
+You must respond in the strict JSON format below. You MUST include ALL THREE keys (`thought`, `action`, and `action_input`) in every single response.
 {
     ""thought"": ""Your reasoning about what to do next"",
     ""action"": ""search_database"" or ""query_file_metadata"" or ""provide_answer"",
@@ -139,15 +151,13 @@ You must respond in the following JSON format:
 Available actions:
 1. ""search_database"" - Use this to find files and content in the backup database. Provide search keywords as action_input (keep it concise, 1-5 keywords is usually best).
 2. ""query_file_metadata"" - Use this to query file metadata like modification times and version history. Provide the exact file path as action_input.
-3. ""provide_answer"" - Use this when you have enough information to answer the user's question. Provide the complete answer as action_input.
+3. ""provide_answer"" - Use this when you have enough information to answer the user's question, or if you have exhausted all search options and cannot find anything else. Provide the complete answer as action_input.
 
 Guidelines:
 - ALWAYS start by searching the database unless the question is purely conversational
 - For questions about ""when was file xxx last modified?"", use query_file_metadata with the file path
 - You can search multiple times with different queries to gather more information
-- Start with broader searches, then narrow down if needed
-- Always provide a complete, helpful answer when using provide_answer
-- If you cannot find relevant information after several searches, say so clearly and suggest what files might exist based on the search results
+- CRITICAL: You must NEVER respond with only a ""thought"". If you are done searching or have reached a dead end, you MUST use the ""provide_answer"" action and summarize what you found (or didn't find) in the ""action_input"".
 """;
 
     /// <summary>
@@ -157,18 +167,21 @@ Guidelines:
     /// <param name="hybridSearchService">The hybrid search service for searching content.</param>
     /// <param name="fileMetadataQueryService">The file metadata query service for file information.</param>
     /// <param name="sessionService">The session service for managing query sessions.</param>
+    /// <param name="repository">The database repository for metadata resolving.</param>
     /// <param name="logger">The logger.</param>
     public ReActQueryService(
         ILLMClient llmClient,
         IHybridSearchService hybridSearchService,
         IFileMetadataQueryService fileMetadataQueryService,
         RagQuerySessionService sessionService,
+        Data.ISurrealRepository repository,
         ILogger<ReActQueryService> logger)
     {
         _llmClient = llmClient;
         _hybridSearchService = hybridSearchService;
         _fileMetadataQueryService = fileMetadataQueryService;
         _sessionService = sessionService;
+        _repository = repository;
         _logger = logger;
         _jsonOptions = new JsonSerializerOptions
         {
@@ -190,7 +203,7 @@ Guidelines:
     {
         _logger.LogInformation("Processing ReAct RAG query for session {SessionId}: {Query}", sessionId, query);
 
-        var queryTimestamp = DateTimeOffset.UtcNow;
+        var queryTimestamp = DateTime.UtcNow;
         var steps = new List<ReActStep>();
         var queryEvents = new List<QueryHistoryEvent>();
 
@@ -215,17 +228,61 @@ Guidelines:
         _logger.LogInformation("Context: {Context}", conversationContext);
 
         string finalAnswer;
+        int consecutiveEmptyPayloads = 0;
+
         for (int iteration = 0; iteration < MaxIterations; iteration++)
         {
             await emitEvent("info", $"Evaluating chunk contexts and consulting AI (Iteration {iteration + 1})... this usually takes 15-30 seconds depending on context size.");
 
-            var step = await ExecuteReActStepAsync(iteration + 1, conversationContext, steps, cancellationToken);
+            ReActStep step;
+            try
+            {
+                step = await ExecuteReActStepAsync(iteration + 1, conversationContext, steps, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calling LLM during ReAct step {Step}", iteration + 1);
+                await emitEvent("info", $"AI model connection error: {ex.Message}");
+                
+                step = new ReActStep
+                {
+                    StepNumber = iteration + 1,
+                    Action = "provide_answer",
+                    ActionInput = $"I apologize, but the AI model encountered a critical error and aborted generation: {ex.Message}. Please try adjusting your context limits or try again later.",
+                    Thought = "Generation aborted due to LLM exception."
+                };
+                steps.Add(step);
+                finalAnswer = step.ActionInput;
+                break;
+            }
+            
+            if (step.Action.Equals("error_retry", StringComparison.OrdinalIgnoreCase))
+            {
+                consecutiveEmptyPayloads++;
+                if (consecutiveEmptyPayloads >= 2)
+                {
+                    _logger.LogWarning("Aborting ReAct loop after {Count} consecutive empty payloads", consecutiveEmptyPayloads);
+                    await emitEvent("info", "Aborting generation after multiple empty payloads from the model.");
+                    step.Action = "provide_answer";
+                    step.ActionInput = "I apologize, but the connection to the AI model was interrupted and it repeatedly failed to return a response. Please try your query again or use a different model.";
+                    steps.Add(step);
+                    finalAnswer = step.ActionInput;
+                    break;
+                }
+            }
+            else
+            {
+                consecutiveEmptyPayloads = 0;
+            }
+
             steps.Add(step);
 
             if (!string.IsNullOrWhiteSpace(step.Thought))
             {
                 await emitEvent("thought", step.Thought);
             }
+
+            // We removed the LLM relevant_files parsing here since it's now handled natively by the database!
 
             _logger.LogInformation("ReAct Step {Step}: Action={Action}, Input={Input}",
                 step.StepNumber, step.Action, step.ActionInput);
@@ -240,15 +297,18 @@ Guidelines:
             if (step.Action.Equals("search_database", StringComparison.OrdinalIgnoreCase))
             {
                 await emitEvent("action", $"Searching database for: {step.ActionInput}");
-                var searchResults = await ExecuteDatabaseSearchAsync(step.ActionInput, topK, cancellationToken);
+                var searchResults = await ExecuteDatabaseSearchAsync(step.ActionInput, topK, emitEvent, cancellationToken);
                 step.Observation = searchResults;
-                conversationContext += $"\n\nObservation from search: {searchResults}";
             }
             else if (step.Action.Equals("query_file_metadata", StringComparison.OrdinalIgnoreCase))
             {
                 var metadataResults = await ExecuteFileMetadataQueryAsync(step.ActionInput, cancellationToken);
                 step.Observation = metadataResults;
-                conversationContext += $"\n\nObservation from file metadata query: {metadataResults}";
+            }
+            else if (step.Action.Equals("error_retry", StringComparison.OrdinalIgnoreCase))
+            {
+                step.Observation = "System: Your last response was completely empty or critically malformed. You MUST generate a valid JSON object matching the required Agent Action schema.";
+                await emitEvent("info", "LLM returned empty payload. Attempting recovery format retry...");
             }
             else
             {
@@ -263,8 +323,12 @@ Guidelines:
             }
         }
 
-        finalAnswer = steps.LastOrDefault(s => s.Action.Equals("provide_answer", StringComparison.OrdinalIgnoreCase))?.ActionInput
-            ?? "I apologize, but I wasn't able to formulate a complete answer based on the available information.";
+        finalAnswer = steps.LastOrDefault(s => s.Action.Equals("provide_answer", StringComparison.OrdinalIgnoreCase))?.ActionInput;
+        
+        if (string.IsNullOrWhiteSpace(finalAnswer))
+        {
+            finalAnswer = "I apologize, but I wasn't able to formulate a complete answer based on the available information. (Generation may have been dropped or aborted early by your local LLM).";
+        }
 
         var result = new RagQueryResult
         {
@@ -276,7 +340,7 @@ Guidelines:
 
         // Record the query in history
         var condensedQuery = steps.FirstOrDefault()?.Thought ?? query;
-        await _sessionService.RecordQueryAsync(session.Id, query, condensedQuery, finalAnswer, queryEvents, cancellationToken);
+        await _sessionService.RecordQueryAsync(session.Id, query, condensedQuery, finalAnswer, queryEvents, default);
 
         return result;
     }
@@ -363,7 +427,17 @@ Guidelines:
                 promptBuilder.AppendLine($"  Input: {step.ActionInput}");
                 if (!string.IsNullOrEmpty(step.Observation))
                 {
-                    promptBuilder.AppendLine($"  Observation: {step.Observation}");
+                    if (step == previousSteps.Last())
+                    {
+                        promptBuilder.AppendLine($"  Observation: {step.Observation}");
+                    }
+                    else
+                    {
+                        var truncatedObs = step.Observation.Length > 200 
+                            ? step.Observation.Substring(0, 200) + "... [truncated historical observation]" 
+                            : step.Observation;
+                        promptBuilder.AppendLine($"  Observation: {truncatedObs}");
+                    }
                 }
             }
         }
@@ -392,6 +466,30 @@ Guidelines:
     {
         try
         {
+            if (response.Contains("<|tool_call>call:"))
+            {
+                var actionStartIndex = response.IndexOf("call:") + 5;
+                var argsStartIndex = response.IndexOf('{', actionStartIndex);
+                var endTokenIndex = response.IndexOf("<tool_call|>", argsStartIndex);
+                if (endTokenIndex == -1) endTokenIndex = response.LastIndexOf('}');
+                
+                if (argsStartIndex > 0 && endTokenIndex > argsStartIndex)
+                {
+                    var actionName = response.Substring(actionStartIndex, argsStartIndex - actionStartIndex).Trim();
+                    var argsRaw = response.Substring(argsStartIndex + 1, endTokenIndex - argsStartIndex - 1);
+                    
+                    var inputMatch = System.Text.RegularExpressions.Regex.Match(argsRaw, @"""([^""]+)""");
+                    var actionInput = inputMatch.Success ? inputMatch.Groups[1].Value : argsRaw.Trim();
+                    
+                    return new AgentAction
+                    {
+                        Thought = "Parsed native tool_call token",
+                        Action = actionName,
+                        ActionInputElement = JsonDocument.Parse(JsonSerializer.Serialize(actionInput)).RootElement
+                    };
+                }
+            }
+
             // Try to extract JSON from the response (in case there's extra text)
             var jsonStart = response.IndexOf('{');
             var jsonEnd = response.LastIndexOf('}');
@@ -400,18 +498,67 @@ Guidelines:
             {
                 var json = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
                 var action = JsonSerializer.Deserialize<AgentAction>(json, _jsonOptions);
-                if (action != null)
+                if (action != null && !string.IsNullOrEmpty(action.Action))
                 {
                     return action;
                 }
             }
 
-            // Fallback: treat the whole response as the answer
+            // Fallback: treat the whole response as the answer or extract partial fields
+            var cleanedResponse = response.Trim();
+            
+            if (cleanedResponse.Contains("\"thought\"") || cleanedResponse.StartsWith("{") || cleanedResponse.StartsWith("```json"))
+            {
+                string textContent = cleanedResponse;
+                bool wasInterrupted = !cleanedResponse.EndsWith("}");
+                
+                // Try extracting action_input first, as that's the ultimate answer
+                var inputMatch = System.Text.RegularExpressions.Regex.Match(cleanedResponse, @"""action_input""\s*:\s*""([\s\S]*?)(?:""\s*,|""\s*}|$)");
+                if (inputMatch.Success && !string.IsNullOrWhiteSpace(inputMatch.Groups[1].Value))
+                {
+                    textContent = inputMatch.Groups[1].Value;
+                }
+                else
+                {
+                    // Fallback to extracting the thought
+                    var thoughtMatch = System.Text.RegularExpressions.Regex.Match(cleanedResponse, @"""thought""\s*:\s*""([\s\S]*?)(?:""\s*,|""\s*}|$)");
+                    if (thoughtMatch.Success)
+                    {
+                        textContent = thoughtMatch.Groups[1].Value;
+                    }
+                }
+                
+                // Unescape typical json newlines and quotes loosely
+                textContent = textContent.Replace("\\n", "\n").Replace("\\\"", "\"").Replace("\\\\", "\\").Trim();
+
+                if (wasInterrupted)
+                {
+                    textContent += "... [Generation interrupted due to context limits]";
+                }
+
+                return new AgentAction
+                {
+                    Thought = "Parsed incomplete JSON response",
+                    Action = "provide_answer",
+                    ActionInputElement = JsonDocument.Parse(JsonSerializer.Serialize(textContent)).RootElement
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(cleanedResponse))
+            {
+                return new AgentAction
+                {
+                    Thought = "The LLM dropped the generation or returned an empty payload.",
+                    Action = "error_retry",
+                    ActionInputElement = JsonDocument.Parse("\"\"").RootElement
+                };
+            }
+
             return new AgentAction
             {
-                Thought = "Parsing the response directly",
-                Action = "provide_answer",
-                ActionInputElement = JsonDocument.Parse($"\"{JsonEncodedText.Encode(response.Trim())}\"").RootElement
+                Thought = $"Parsing the response directly [Debug: startsWithMark={cleanedResponse.StartsWith("```json")}, containsThought={cleanedResponse.Contains("\"thought\"")}, startChars='{(cleanedResponse.Length > 0 ? (int)cleanedResponse[0] : 0)}']",
+                Action = "error_retry",
+                ActionInputElement = JsonDocument.Parse(JsonSerializer.Serialize(cleanedResponse)).RootElement
             };
         }
         catch (Exception ex)
@@ -421,12 +568,12 @@ Guidelines:
             {
                 Thought = "Error parsing response",
                 Action = "provide_answer",
-                ActionInputElement = JsonDocument.Parse($"\"{JsonEncodedText.Encode(response.Trim())}\"").RootElement
+                ActionInputElement = JsonDocument.Parse(JsonSerializer.Serialize(response.Trim())).RootElement
             };
         }
     }
 
-    private async Task<string> ExecuteDatabaseSearchAsync(string searchQuery, int topK, CancellationToken cancellationToken)
+    private async Task<string> ExecuteDatabaseSearchAsync(string searchQuery, int topK, Func<string, string, Task> emitEvent, CancellationToken cancellationToken)
     {
         try
         {
@@ -440,13 +587,56 @@ Guidelines:
             var searchResults = await _hybridSearchService.SearchAsync(searchQuery, searchOptions, cancellationToken);
             var results = searchResults.ToList();
 
+            if (results.Any())
+            {
+                // Push the explicit vector mathematical scores down to the frontend!
+                double maxScore = results.Max(r => r.Score);
+                var relevantPayload = new List<object>();
+
+                foreach (var r in results)
+                {
+                    if (r.Metadata != null && r.Metadata.TryGetValue("FileId", out var fileIdObj))
+                    {
+                        var fileIdStr = fileIdObj?.ToString();
+                        if (!string.IsNullOrEmpty(fileIdStr))
+                        {
+                            // Map the raw UUID string directly to the SurrealDB Record ID to bypass .NET Guid endianness bugs
+                            // This ensures O(1) primary key resolution.
+                            var recordId = fileIdStr.Replace("-", "");
+                            var entries = await _repository.QueryAsync<Data.Entities.BackupFileEntry>($"SELECT * FROM type::thing('backupfileentry', '{recordId}')", null, cancellationToken);
+                            var entry = entries.FirstOrDefault();
+                            if (entry != null && !string.IsNullOrEmpty(entry.Path))
+                            {
+                                relevantPayload.Add(new { 
+                                    path = entry.Path, 
+                                    score = maxScore > 0 ? (double)(r.Score / maxScore) : 0 
+                                });
+                            }
+                        }
+                    }
+                }
+                    
+                if (relevantPayload.Any())
+                {
+                    await emitEvent("relevant_files", JsonSerializer.Serialize(relevantPayload));
+                }
+            }
+
             if (!results.Any())
             {
                 return "No relevant documents found for this query.";
             }
 
+            int maxCharsPerResult = 4000 / Math.Max(1, results.Count);
             return string.Join("\n\n", results.Select((r, i) =>
-                $"[Result {i + 1}] (Score: {r.Score:F4}, Source: {r.Source}) {r.Content}"));
+            {
+                string content = r.Content ?? string.Empty;
+                if (content.Length > maxCharsPerResult)
+                {
+                    content = content.Substring(0, maxCharsPerResult) + "... [truncated]";
+                }
+                return $"[Result {i + 1}] (Score: {r.Score:F4}, Source: {r.Source}) {content}";
+            }));
         }
         catch (Exception ex)
         {

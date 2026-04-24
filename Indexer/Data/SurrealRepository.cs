@@ -48,8 +48,26 @@ public class SurrealRepository : ISurrealRepository
         else throw new InvalidOperationException($"Entity Id must be a Guid.");
 
         var table = GetTableForType<T>();
-        var idStr = id.ToString("N");
-        await _client.Query($"UPSERT type::thing({table}, {idStr}) CONTENT {entity}", cancellationToken);
+        var properties = type.GetProperties().Where(p => p.CanRead).ToList();
+        
+        var updateClauses = properties
+            .Where(p => p.Name != "Id")
+            .Select(p => $"{p.Name} = $input.{p.Name}");
+            
+        var updateString = string.Join(", ", updateClauses);
+        
+        var query = $"INSERT INTO {table} $p0 ON DUPLICATE KEY UPDATE {updateString};";
+
+        var dict = new Dictionary<string, object?>();
+        dict["id"] = id.ToString("N");
+
+        foreach (var prop in properties)
+        {
+            dict[prop.Name] = prop.GetValue(entity);
+        }
+
+        var parameters = new Dictionary<string, object?> { { "p0", dict } };
+        await _client.RawQuery(query, parameters, cancellationToken);
     }
 
     public async Task StoreManyAsync<T>(IEnumerable<T> entities, CancellationToken cancellationToken = default) where T : class
@@ -66,7 +84,7 @@ public class SurrealRepository : ISurrealRepository
         var table = GetTableForType<T>();
         var updateClauses = properties
             .Where(p => p.Name != "Id")
-            .Select(p => $"{p.Name} = $input.{p.Name}");
+            .Select(p => p.PropertyType == typeof(DateTime) ? $"{p.Name} = type::datetime($input.{p.Name})" : $"{p.Name} = $input.{p.Name}");
             
         var updateString = string.Join(", ", updateClauses);
         
@@ -94,7 +112,15 @@ public class SurrealRepository : ISurrealRepository
 
                 foreach (var prop in properties)
                 {
-                    dict[prop.Name] = prop.GetValue(entity);
+                    var val = prop.GetValue(entity);
+                    if (val is DateTime dt)
+                    {
+                        dict[prop.Name] = dt.ToString("O");
+                    }
+                    else
+                    {
+                        dict[prop.Name] = val;
+                    }
                 }
 
                 items.Add(dict);

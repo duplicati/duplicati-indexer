@@ -49,6 +49,18 @@ public class DbStatsLiveMonitor : BackgroundService
         }
     }
 
+    public void Reset()
+    {
+        Interlocked.Exchange(ref _metadataCount, 0);
+        Interlocked.Exchange(ref _vectorCount, 0);
+        Interlocked.Exchange(ref _sparseCount, 0);
+        Interlocked.Exchange(ref _versionFileCount, 0);
+        Interlocked.Exchange(ref _extractedChunkCount, 0);
+        Interlocked.Exchange(ref _indexedFileCount, 0);
+        Interlocked.Exchange(ref _baselineInitialized, 0);
+        OnStatsUpdated?.Invoke();
+    }
+
     public void IncrementMetadata(long delta)
     {
         Interlocked.Add(ref _metadataCount, delta);

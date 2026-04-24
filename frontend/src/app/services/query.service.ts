@@ -19,6 +19,9 @@ export interface RagQueryEvent {
   eventType: string; // 'thought', 'action', 'final', etc.
   content: string;
   eventContext?: string; // e.g. sessionId for final
+  timestamp?: Date;
+  associatedFiles?: string[]; // Files highlighted during this thought/action
+  actionContent?: string; // The action taken during this thought
 }
 
 export interface ChatSession {
@@ -67,6 +70,14 @@ export class QueryService {
 
   getSessionHistory(sessionId: string): Observable<SessionDetailsResponse> {
     return this.http.get<SessionDetailsResponse>(`/api/rag/sessions/${sessionId}`);
+  }
+
+  revertSession(sessionId: string, messageId: string): Observable<void> {
+    return this.http.delete<void>(`/api/rag/sessions/${sessionId}/revert/${messageId}`);
+  }
+
+  getFileContent(path: string): Observable<{ path: string, content: string }> {
+    return this.http.get<{ path: string, content: string }>(`/api/files/content?path=${encodeURIComponent(path)}`);
   }
 
   streamDatabaseStats(): Observable<{ documentCount: number, sparseCount: number, metadataCount: number }> {
@@ -126,6 +137,7 @@ export class QueryService {
                 console.log('Received raw streaming chunk:', dataStr);
                 try {
                   const eventData = JSON.parse(dataStr) as RagQueryEvent;
+                  eventData.timestamp = new Date();
                   console.log('Parsed stream event:', eventData);
                   observer.next(eventData);
                   if (eventData.eventType === 'final') {

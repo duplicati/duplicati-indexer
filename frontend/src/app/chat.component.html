@@ -1,0 +1,391 @@
+<sh-sidenav [class]="sidenavType()" [(isOpen)]="isNavOpen" [disableDrag]="true">
+  <div sidenav>
+    <header style="display: flex; align-items: center; justify-content: space-between; width: 100%">
+      <app-logo />
+
+      <div style="display: flex; align-items: center; gap: 12px">
+        <button shButton class="icon small" (click)="toggleBodyClass()">
+          @if (isDarkMode()) {
+            <sh-icon>sun</sh-icon>
+          } @else {
+            <sh-icon>moon</sh-icon>
+          }
+        </button>
+      </div>
+    </header>
+
+    <sh-list class="primary">
+      <button
+        action
+        (click)="clearQuery(); viewMode.set('chat')"
+        [class.active]="viewMode() === 'chat' && !hasSubmitted()"
+      >
+        <sh-icon>plus</sh-icon>
+        New conversation
+      </button>
+
+      <button action (click)="viewMode.set('search')" [class.active]="viewMode() === 'search'">
+        <sh-icon>hard-drives</sh-icon>
+        Raw Search Evaluator
+      </button>
+    </sh-list>
+
+    <div class="sidebar-scroller">
+      <sh-list class="base-1 primary sidebar-list">
+        @for (session of sessions(); track session.id) {
+          <button
+            action
+            [class.active]="sessionId() === session.id"
+            (click)="loadSession(session.id)"
+            style="display: flex; align-items: center; justify-content: space-between;"
+          >
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ session.title }}</span>
+            @if (session.id === sessionId() && isLoading()) {
+              <sh-spinner size="12" style="margin-left: 8px; opacity: 0.6; flex-shrink: 0;" />
+            }
+          </button>
+        }
+      </sh-list>
+    </div>
+
+    <sh-list class="base-1l primary">
+      <sh-divider />
+
+      <div class="telemetry-panel">
+        <span class="telemetry-title">
+          <sh-icon>hard-drives</sh-icon>
+          Live Database Telemetry
+        </span>
+
+        <div class="telemetry-row">
+          <span class="label">Metadata Parsed</span>
+          <sh-chip
+            [color]="metadataCount() > 0 ? 'success' : 'default'"
+            size="small"
+            variant="flat"
+          >
+            {{ metadataCount() | number }}
+          </sh-chip>
+        </div>
+
+        <div class="telemetry-row">
+          <span class="label">Vector Embeddings</span>
+          <sh-chip [color]="dbCount() > 0 ? 'primary' : 'default'" size="small" variant="flat">
+            {{ dbCount() | number }}
+          </sh-chip>
+        </div>
+
+        <div class="telemetry-row">
+          <span class="label">Sparse Indexes</span>
+          <sh-chip [color]="sparseCount() > 0 ? 'primary' : 'default'" size="small" variant="flat">
+            {{ sparseCount() | number }}
+          </sh-chip>
+        </div>
+      </div>
+
+      <a href="https://github.com/duplicati/duplicati" target="_blank" action>
+        <sh-icon>info</sh-icon>
+        About Indexer
+      </a>
+    </sh-list>
+  </div>
+
+  <div class="layout-wrapper">
+    <div class="app-container main-column">
+      @if (viewMode() === 'chat') {
+        <div class="main-content" [class.has-response]="hasSubmitted()">
+          @if (!hasSubmitted()) {
+            <header class="header">
+              <h1 class="title">What can I helps you with?</h1>
+            </header>
+          }
+
+          @if (hasSubmitted()) {
+            <div class="conversation-section" #conversationContainer>
+              <div class="conversation-list">
+                @for (message of conversation(); track message.id) {
+                  <div class="conversation-item">
+                    <div class="user-query" style="position: relative; padding-bottom: 8px">
+                      <sh-card class="query-card type-c">
+                        <span class="query-text">{{ message.query }}</span>
+                      </sh-card>
+                      <div
+                        style="
+                          display: flex;
+                          justify-content: flex-end;
+                          gap: 8px;
+                          font-size: 11px;
+                          color: var(--sh-text-disabled);
+                          margin-top: 4px;
+                        "
+                      >
+                        <span>{{ message.timestamp | date: 'h:mm:ss a' }}</span>
+                        <a
+                          href="javascript:void(0)"
+                          (click)="revertMessage(message.id)"
+                          style="color: inherit; text-decoration: underline"
+                          >Revert</a
+                        >
+                      </div>
+                    </div>
+
+                    @if (message.events?.length) {
+                      <div class="events-container">
+                        @for (event of message.events; track $index) {
+                          @if (event.eventType === 'thought') {
+                            <sh-alert
+                              variant="outlined"
+                              class="event-alert"
+                              style="
+                                display: flex;
+                                flex-direction: column;
+                                cursor: {{ event.associatedFiles?.length ? 'pointer' : 'default' }};
+                              "
+                              (mouseenter)="hoverEvent(event)"
+                              (mouseleave)="hoverEvent(null)"
+                              (click)="clickEvent(event)"
+                              [class.active-filter]="
+                                selectedFiles() &&
+                                selectedFiles()!.join(',') === event.associatedFiles?.join(',')
+                              "
+                            >
+                              <div
+                                style="
+                                  display: flex;
+                                  justify-content: space-between;
+                                  align-items: flex-start;
+                                  width: 100%;
+                                "
+                              >
+                                <div>
+                                  <span class="event-type">Thought:</span>
+                                  <span class="event-content italic">{{ event.content }}</span>
+                                </div>
+                                @if (event.timestamp) {
+                                  <span
+                                    style="
+                                      font-size: 10px;
+                                      opacity: 0.6;
+                                      white-space: nowrap;
+                                      margin-left: 8px;
+                                    "
+                                    >{{ event.timestamp | date: 'h:mm:ss a' }}</span
+                                  >
+                                }
+                              </div>
+                              @if (event.actionContent) {
+                                <div
+                                  style="
+                                    margin-top: 8px;
+                                    padding-top: 8px;
+                                    border-top: 1px dashed var(--sh-border-color, #2b2b2b);
+                                    width: 100%;
+                                  "
+                                >
+                                  <span
+                                    class="event-type"
+                                    style="color: var(--sh-color-success, #4ade80)"
+                                    >Action:</span
+                                  >
+                                  <span class="event-content">{{ event.actionContent }}</span>
+                                </div>
+                              }
+                            </sh-alert>
+                          }
+                        }
+                      </div>
+                    }
+
+                    @if (message.isLoading) {
+                      <sh-card
+                        class="secondary outline loading-card"
+                        style="
+                          display: flex;
+                          flex-direction: column;
+                          gap: 8px;
+                          align-items: flex-start;
+                        "
+                      >
+                        <div style="display: flex; align-items: center; gap: 12px">
+                          <sh-spinner
+                            [style.--spinner-size]="'16px'"
+                            [style.--spinner-thickness]="'2px'"
+                          ></sh-spinner>
+                          <span class="loading-text">Thinking...</span>
+                        </div>
+                        @if (message.latestEvent) {
+                          <div
+                            style="
+                              font-size: 13px;
+                              color: var(--sh-text-secondary);
+                              margin-left: 28px;
+                            "
+                          >
+                            @if (message.latestEvent.eventType === 'info') {
+                              <span class="italic">{{ message.latestEvent.content }}</span>
+                            } @else if (message.latestEvent.eventType === 'thought') {
+                              <span style="font-weight: 500">Thought:</span>
+                              <span class="italic">{{ message.latestEvent.content }}</span>
+                            } @else {
+                              <span class="italic">{{ message.latestEvent.content }}</span>
+                            }
+                          </div>
+                        }
+                      </sh-card>
+                    }
+
+                    @if (message.response) {
+                      <sh-card class="outline response-card">
+                        <div class="response-header">
+                          <div class="ai-avatar">
+                            <app-logo [iconOnly]="true" />
+                          </div>
+                          <span class="response-label">Indexer</span>
+                        </div>
+                        <div class="response-content">
+                          <p class="response-text">{{ message.response }}</p>
+                        </div>
+                      </sh-card>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <div class="query-section">
+            <sh-card class="input-container type-c">
+              <sh-form-field class="query-form-field">
+                <textarea
+                  class="query-textarea"
+                  [ngModel]="queryText()"
+                  (ngModelChange)="queryText.set($event)"
+                  (keydown)="onKeyDown($event)"
+                  [placeholder]="
+                    hasSubmitted()
+                      ? 'Ask a follow-up question...'
+                      : 'Ask anything about your backups...'
+                  "
+                  rows="1"
+                  [disabled]="isLoading()"
+                ></textarea>
+              </sh-form-field>
+
+              <div class="input-actions">
+                @if (isLoading()) {
+                  <button
+                    shButton
+                    class="error outline submit-action-btn"
+                    (click)="abortQuery()"
+                    title="Stop Generating"
+                  >
+                    <sh-icon>x-square</sh-icon>
+                  </button>
+                } @else {
+                  <button
+                    shButton
+                    class="primary raised submit-action-btn"
+                    (click)="onSubmit()"
+                    [disabled]="!queryText().trim()"
+                    [attr.aria-label]="hasSubmitted() ? 'Submit follow-up' : 'Submit query'"
+                  >
+                    <sh-icon>paper-plane-tilt</sh-icon>
+                  </button>
+                }
+              </div>
+            </sh-card>
+
+            <div class="input-hints">
+              <p class="hint">Press Enter to submit, Shift+Enter for new line</p>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div style="flex: 1; overflow-y: auto">
+          <app-search-view></app-search-view>
+        </div>
+      }
+
+      <footer class="footer">
+        <p>Duplicati - AI-powered backup search</p>
+      </footer>
+    </div>
+
+    <div class="files-sidebar">
+      <div class="files-sidebar-header">
+        <h3>
+          <sh-icon>files</sh-icon>
+          Files Tracked
+        </h3>
+        <div style="display: flex; align-items: center; gap: 8px">
+          @if (selectedFiles()) {
+            <button
+              shButton
+              variant="flat"
+              size="small"
+              color="warn"
+              (click)="clearFileFilter()"
+              title="Clear filter"
+            >
+              <sh-icon size="small">x</sh-icon>
+            </button>
+          }
+          <sh-chip size="small" variant="flat" color="primary" class="file-count">{{
+            filteredRelevantFiles().length
+          }}</sh-chip>
+        </div>
+      </div>
+
+      <div class="files-sidebar-content">
+        @if (filteredRelevantFiles().length > 0) {
+          <div class="files-sidebar-list">
+            @for (file of filteredRelevantFiles(); track file.path) {
+              <sh-card
+                class="outline type-c file-card hoverable"
+                [class.is-hovered]="
+                  hoveredFiles()?.includes(file.path) || selectedFiles()?.includes(file.path)
+                "
+                (click)="openFilePreview(file.path)"
+                style="cursor: pointer"
+              >
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 8px;
+                  "
+                >
+                  <span class="file-card-basename">
+                    <sh-icon size="small">file</sh-icon>
+                    {{ file.path }}
+                  </span>
+                </div>
+              </sh-card>
+            }
+          </div>
+        } @else {
+          <div
+            style="
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              height: 100%;
+              color: var(--sh-text-secondary);
+              text-align: center;
+              gap: 12px;
+              padding: 48px 16px;
+            "
+          >
+            <sh-icon style="opacity: 0.5; font-size: 32px">file</sh-icon>
+            <p style="margin: 0; font-size: 14px">No files tracked yet.</p>
+            <p style="margin: 0; font-size: 12px; opacity: 0.7">
+              Documents evaluated by the AI during its search process will appear here.
+            </p>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</sh-sidenav>

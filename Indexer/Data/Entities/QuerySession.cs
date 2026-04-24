@@ -18,10 +18,10 @@ public class QuerySession
     /// <summary>
     /// Gets or sets the timestamp when the session was created.
     /// </summary>
-    public DateTimeOffset CreatedAt { get; set; }
+    public string CreatedAt { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the timestamp of the last activity in the session.
     /// </summary>
-    public DateTimeOffset LastActivityAt { get; set; }
+    public string LastActivityAt { get; set; } = string.Empty;
 }

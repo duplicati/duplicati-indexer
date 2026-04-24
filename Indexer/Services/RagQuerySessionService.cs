@@ -42,13 +42,13 @@ public class RagQuerySessionService
         if (session != null)
         {
             // Update last activity timestamp
-            session.LastActivityAt = DateTimeOffset.UtcNow;
+            session.LastActivityAt = DateTime.UtcNow.ToString("O");
             await _repository.StoreAsync(session, cancellationToken);
             return (session, false);
         }
 
         // Create new session
-        var queryTimestamp = DateTimeOffset.UtcNow;
+        var queryTimestamp = DateTime.UtcNow.ToString("O");
         session = new QuerySession
         {
             Id = sessionId,
@@ -81,8 +81,8 @@ public class RagQuerySessionService
         List<QueryHistoryEvent>? events = null,
         CancellationToken cancellationToken = default)
     {
-        var queryTimestamp = DateTimeOffset.UtcNow;
-        var responseTimestamp = DateTimeOffset.UtcNow;
+        var queryTimestamp = DateTime.UtcNow.ToString("O");
+        var responseTimestamp = DateTime.UtcNow.ToString("O");
 
         var historyItem = new QueryHistoryItem
         {
@@ -153,5 +153,33 @@ public class RagQuerySessionService
     {
         var sql = "SELECT * FROM querysession ORDER BY LastActivityAt DESC";
         return await _repository.QueryAsync<QuerySession>(sql, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reverts a session's history by deleting the target message and all subsequent messages.
+    /// </summary>
+    /// <param name="sessionId">The session identifier.</param>
+    /// <param name="messageId">The message identifier to revert from.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public async Task RevertSessionToMessageAsync(Guid sessionId, Guid messageId, CancellationToken cancellationToken = default)
+    {
+        var targetMessage = await _repository.GetAsync<QueryHistoryItem>(messageId, cancellationToken);
+        if (targetMessage == null || targetMessage.SessionId != sessionId)
+        {
+            _logger.LogWarning("Revert requested for unknown or mismatched message {MessageId} in session {SessionId}", messageId, sessionId);
+            return;
+        }
+
+        var sql = "DELETE queryhistoryitem WHERE SessionId = $sessionId AND QueryTimestamp >= $timestamp";
+        var parameters = new Dictionary<string, object> 
+        { 
+            { "sessionId", sessionId }, 
+            { "timestamp", targetMessage.QueryTimestamp }
+        };
+
+        // In SurrealDB, DELETE uses 'DELETE table WHERE'
+
+        await _repository.QueryAsync<object>(sql, parameters, cancellationToken);
+        _logger.LogInformation("Reverted session {SessionId} back to message {MessageId}", sessionId, messageId);
     }
 }

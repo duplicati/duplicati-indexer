@@ -1,11 +1,17 @@
-﻿{
+{
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "DuplicatiIndexer": {
+    "Local (Hot Reload)": {
       "commandName": "Project",
       "dotnetRunMessages": true,
+      "hotReloadProfile": "aspnetcore",
       "environmentVariables": {
-        "DOTNET_ENVIRONMENT": "Development"
+        "DOTNET_ENVIRONMENT": "Development",
+        "CONNECTIONSTRINGS__DOCUMENTSTORE": "Server=http://localhost:8000;Namespace=test;Database=test;Username=root;Password=root",
+        "UNSTRUCTURED__BASEURL": "http://localhost:8002",
+        "OLLAMAEMBED__BASEURL": "http://localhost:11434",
+        "OLLAMALLM__BASEURL": "http://localhost:11435",
+        "LMSTUDIO__BASEURL": "http://localhost:1234/v1"
       }
     }
   }

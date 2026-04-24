@@ -34,12 +34,12 @@ public class QueryHistoryItem
     /// <summary>
     /// Gets or sets the timestamp when the query was made.
     /// </summary>
-    public DateTimeOffset QueryTimestamp { get; set; }
+    public string QueryTimestamp { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the timestamp when the response was generated.
     /// </summary>
-    public DateTimeOffset ResponseTimestamp { get; set; }
+    public string ResponseTimestamp { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the reasoning insights, thoughts, and actions taken to arrive at the response.

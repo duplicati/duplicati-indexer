@@ -23,6 +23,9 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST -u "root:root" \
 HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
 
 if [ "$HTTP_CODE" == "200" ]; then
+    # Synchronously flush the C# .NET Core internal memory layer telemetry stats cache
+    curl -s -X DELETE "http://localhost:8081/api/stats" >/dev/null 2>&1
+    
     echo -e "${GREEN}${CHECK_MARK} Database telemetry and chunk cache successfully wiped clean!${NC}"
     echo -e "You can now run ./ingest-enron.sh for a perfectly clean slate."
 else

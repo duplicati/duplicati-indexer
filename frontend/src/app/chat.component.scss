@@ -112,7 +112,7 @@ div[sidenav] {
 .sidebar-scroller {
   flex: 1;
   overflow-y: auto;
-  padding: p2r(0 12);
+  padding: p2r(4 12);
 }
 .sidebar-list {
   padding: 0;
@@ -256,5 +256,146 @@ div[sidenav] {
 
   .title {
     font-size: 1.75rem;
+  }
+}
+
+/* App Layout Wrapper */
+.layout-wrapper {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--sh-surface-ground);
+}
+
+.main-column {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow-y: auto;
+}
+
+/* Extracted Files Sidebar */
+.files-sidebar {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--base-4);
+  background: var(--base-2);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.02);
+  z-index: 10;
+}
+
+.files-sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--sh-border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .file-count {
+    font-weight: bold;
+  }
+}
+
+.files-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.files-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-card {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.file-card-basename {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--sh-text-primary);
+  word-break: break-all;
+
+  sh-icon {
+    margin-right: 6px;
+    color: var(--sh-text-secondary);
+    vertical-align: text-bottom;
+  }
+}
+
+.file-card {
+  transition: all 0.2s ease-in-out;
+  &.is-hovered {
+    background-color: var(--sh-surface-hover);
+    border-color: var(--sh-color-primary) !important;
+    transform: translateX(4px);
+  }
+}
+
+.event-alert {
+  transition: all 0.2s ease-in-out;
+  &.active-filter {
+    border-color: var(--sh-color-primary) !important;
+    background-color: var(--sh-surface-hover);
+    border-width: 2px;
+  }
+}
+
+.file-card-path {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--sh-text-secondary);
+  word-break: break-all;
+  opacity: 0.8;
+}
+
+/* Telemetry Panel (Left Sidebar) */
+.telemetry-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  cursor: default;
+  user-select: text;
+  background: var(--sh-base-1l);
+  border-radius: 8px;
+
+  .telemetry-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .telemetry-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+
+    .label {
+      color: var(--sh-text-secondary);
+    }
   }
 }
