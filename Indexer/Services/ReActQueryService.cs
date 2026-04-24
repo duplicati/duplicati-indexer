@@ -141,23 +141,28 @@ Use query_file_metadata when the user asks about:
 - Files existing at specific backup times
 - Questions like ""when was file xxx last modified?"" or ""show me the version history of file yyy""
 
-You must respond in the strict JSON format below. You MUST include ALL THREE keys (`thought`, `action`, and `action_input`) in every single response.
+You have two ways to respond:
+
+1. TOOL USE (JSON FORMAT):
+If you need to search or use a tool, you MUST respond in the strict JSON format below:
 {
     ""thought"": ""Your reasoning about what to do next"",
-    ""action"": ""search_database"" or ""query_file_metadata"" or ""provide_answer"",
-    ""action_input"": ""your search query, file path, or final answer""
+    ""action"": ""search_database"" or ""query_file_metadata"",
+    ""action_input"": ""your search query or file path""
 }
 
 Available actions:
-1. ""search_database"" - Use this to find files and content in the backup database. Provide search keywords as action_input (keep it concise, 1-5 keywords is usually best).
-2. ""query_file_metadata"" - Use this to query file metadata like modification times and version history. Provide the exact file path as action_input.
-3. ""provide_answer"" - Use this when you have enough information to answer the user's question, or if you have exhausted all search options and cannot find anything else. Provide the complete answer as action_input.
+- ""search_database"" - Use this to find files and content in the backup database. Provide search keywords as action_input (keep it concise, 1-5 keywords is usually best).
+- ""query_file_metadata"" - Use this to query file metadata like modification times and version history. Provide the exact file path as action_input.
+
+2. FINAL ANSWER (RAW TEXT):
+If you have enough information to answer the user's question, or if you have exhausted all search options, DO NOT USE JSON. Instead, simply output your final answer as raw markdown text. Do not wrap it in a JSON object. Just provide the answer directly.
 
 Guidelines:
 - ALWAYS start by searching the database unless the question is purely conversational
 - For questions about ""when was file xxx last modified?"", use query_file_metadata with the file path
 - You can search multiple times with different queries to gather more information
-- CRITICAL: You must NEVER respond with only a ""thought"". If you are done searching or have reached a dead end, you MUST use the ""provide_answer"" action and summarize what you found (or didn't find) in the ""action_input"".
+- CRITICAL: Never combine JSON and raw text in the same response. Choose one format or the other based on whether you are taking an action or answering the user.
 """;
 
     /// <summary>
@@ -237,7 +242,7 @@ Guidelines:
             ReActStep step;
             try
             {
-                step = await ExecuteReActStepAsync(iteration + 1, conversationContext, steps, cancellationToken);
+                step = await ExecuteReActStepAsync(iteration + 1, conversationContext, steps, emitEvent, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -411,6 +416,7 @@ Guidelines:
         int stepNumber,
         string conversationContext,
         List<ReActStep> previousSteps,
+        Func<string, string, Task>? emitEvent,
         CancellationToken cancellationToken)
     {
         var promptBuilder = new System.Text.StringBuilder();
@@ -442,7 +448,7 @@ Guidelines:
             }
         }
 
-        promptBuilder.AppendLine($"\nYou have at most {MaxIterations} steps to complete your task. What is your next action? Respond in the required JSON format.");
+        promptBuilder.AppendLine($"\nYou have at most {MaxIterations} steps to complete your task. What is your next action? (Respond with JSON if using a tool, or raw text if providing the final answer).");
 
         var messages = new[]
         {
@@ -450,7 +456,50 @@ Guidelines:
             new ChatMessage { Role = ChatRole.User, Content = promptBuilder.ToString() }
         };
 
-        var response = await _llmClient.CompleteAsync(messages, cancellationToken);
+        var stream = _llmClient.StreamCompleteAsync(messages, cancellationToken);
+        var isFirstToken = true;
+        var isJsonMode = false;
+        var fullResponseBuilder = new System.Text.StringBuilder();
+
+        await foreach (var chunk in stream.WithCancellation(cancellationToken))
+        {
+            if (string.IsNullOrEmpty(chunk)) continue;
+
+            if (isFirstToken)
+            {
+                var trimmed = chunk.TrimStart();
+                if (string.IsNullOrEmpty(trimmed)) continue;
+
+                isFirstToken = false;
+                if (trimmed.StartsWith("{") || trimmed.StartsWith("```json") || trimmed.StartsWith("<|tool_call>"))
+                {
+                    isJsonMode = true;
+                }
+            }
+
+            fullResponseBuilder.Append(chunk);
+
+            if (!isJsonMode && emitEvent != null)
+            {
+                // Stream plain text final answer chunks directly to the UI
+                await emitEvent("answer_chunk", chunk);
+            }
+        }
+
+        var response = fullResponseBuilder.ToString();
+
+        if (!isJsonMode)
+        {
+            // Synthesize the final answer action
+            return new ReActStep
+            {
+                StepNumber = stepNumber,
+                Thought = "Provided raw text final answer directly to user.",
+                Action = "provide_answer",
+                ActionInput = response.Trim()
+            };
+        }
+
         var action = ParseAgentAction(response);
 
         return new ReActStep

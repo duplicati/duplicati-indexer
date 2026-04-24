@@ -198,8 +198,60 @@ div[sidenav] {
 .response-text {
   font-size: 1rem;
   line-height: 1.7;
-  white-space: pre-wrap;
   margin: 0;
+}
+
+/* Markdown Styles */
+::ng-deep .markdown-body {
+  p {
+    margin-top: 0;
+    margin-bottom: 1rem;
+  }
+  
+  p:last-child {
+    margin-bottom: 0;
+  }
+
+  ul, ol {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    padding-left: 2rem;
+  }
+
+  code {
+    background: var(--base-3);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 85%;
+  }
+
+  pre {
+    background: var(--base-3);
+    padding: 1rem;
+    border-radius: var(--shape-2);
+    overflow-x: auto;
+    
+    code {
+      background: transparent;
+      padding: 0;
+    }
+  }
+
+  blockquote {
+    margin: 0 0 1rem 0;
+    padding: 0 1rem;
+    color: var(--text-secondary);
+    border-left: 0.25rem solid var(--base-4);
+  }
+
+  a {
+    color: var(--sh-color-primary);
+    text-decoration: none;
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 .input-container {

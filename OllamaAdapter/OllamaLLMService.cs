@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using DuplicatiIndexer.AdapterInterfaces;
 using Microsoft.Extensions.Logging;
@@ -86,6 +87,14 @@ public class OllamaLLMService : ILLMClient
         _logger.LogDebug("Successfully received response from Ollama model {Model}", _model);
 
         return content ?? string.Empty;
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string> StreamCompleteAsync(IEnumerable<ChatMessage> messages, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Fallback: Ollama implementation doesn't support true streaming yet. Just yield the final result.
+        var content = await CompleteAsync(messages, cancellationToken);
+        yield return content;
     }
 
     private static string ToRoleString(ChatRole role) => role switch

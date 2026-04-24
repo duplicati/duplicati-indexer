@@ -51,4 +51,12 @@ public interface ILLMClient
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The generated completion text.</returns>
     Task<string> CompleteAsync(IEnumerable<ChatMessage> messages, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a conversation to the LLM and streams the response tokens as they are generated.
+    /// </summary>
+    /// <param name="messages">The conversation messages.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>An async enumerable of generated completion tokens.</returns>
+    IAsyncEnumerable<string> StreamCompleteAsync(IEnumerable<ChatMessage> messages, CancellationToken cancellationToken = default);
 }

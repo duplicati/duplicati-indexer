@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using DuplicatiIndexer.AdapterInterfaces;
 using Microsoft.Extensions.Logging;
@@ -140,6 +141,77 @@ public class ChatGPTService : ILLMClient
         var content = responseContent.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
 
         return content ?? string.Empty;
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string> StreamCompleteAsync(IEnumerable<ChatMessage> messages, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (messages == null) throw new ArgumentNullException(nameof(messages));
+
+        var url = $"{_config.BaseUrl.TrimEnd('/')}/chat/completions";
+        var model = _config.Model;
+        var messageList = messages.Select(m => new { role = ToRoleString(m.Role), content = m.Content }).ToArray();
+
+        var requestBody = new
+        {
+            model = model,
+            messages = messageList,
+            stream = true
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(requestBody)
+        };
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}). Error: {errorBody}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync();
+            if (line == null) break;
+            
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                if (data == "[DONE]") break;
+
+                string contentToYield = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(data);
+                    var choices = doc.RootElement.GetProperty("choices");
+                    if (choices.GetArrayLength() > 0)
+                    {
+                        var delta = choices[0].GetProperty("delta");
+                        if (delta.TryGetProperty("content", out var contentProp))
+                        {
+                            contentToYield = contentProp.GetString();
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Ignore malformed JSON chunks
+                }
+
+                if (!string.IsNullOrEmpty(contentToYield))
+                {
+                    yield return contentToYield;
+                }
+            }
+        }
     }
 
     private static string ToRoleString(ChatRole role) => role switch

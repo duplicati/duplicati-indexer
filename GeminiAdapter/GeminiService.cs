@@ -1,5 +1,6 @@
 using DuplicatiIndexer.AdapterInterfaces;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -193,5 +194,13 @@ public class GeminiService : ILLMClient
 
         var content = textElement.GetString();
         return content ?? string.Empty;
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string> StreamCompleteAsync(IEnumerable<ChatMessage> messages, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Fallback: Gemini implementation doesn't support true streaming yet. Just yield the final result.
+        var content = await CompleteAsync(messages, cancellationToken);
+        yield return content;
     }
 }

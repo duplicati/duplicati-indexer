@@ -29,6 +29,7 @@ import { ConfirmDialogComponent } from './components/confirm-dialog/confirm-dial
 import { Subscription } from 'rxjs';
 import LogoComponent from './components/logo/logo.component';
 import { SearchViewComponent } from './components/search-view/search-view';
+import { MarkdownPipe } from './markdown.pipe';
 import {
   ChatSession,
   QueryService,
@@ -63,7 +64,8 @@ export interface ConversationMessage {
     ShipChip,
 
     LogoComponent,
-    SearchViewComponent
+    SearchViewComponent,
+    MarkdownPipe
   ],
   templateUrl: './chat.component.html',
   styleUrl: './chat.component.scss',
@@ -392,6 +394,9 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
                 this.location.go(`/session/${event.content}`);
                 this.fetchSessions();
               }
+            } else if (event.eventType === 'answer_chunk') {
+              message.isLoading = false; // Stop the "Thinking..." spinner
+              message.response = (message.response || '') + event.content;
             } else if (event.eventType === 'final') {
               message.response = event.content;
               message.isLoading = false;

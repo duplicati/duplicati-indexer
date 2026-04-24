@@ -243,7 +243,7 @@
                           <span class="response-label">Indexer</span>
                         </div>
                         <div class="response-content">
-                          <p class="response-text">{{ message.response }}</p>
+                          <div class="response-text markdown-body" [innerHTML]="message.response | markdown"></div>
                         </div>
                       </sh-card>
                     }
