@@ -54,7 +54,7 @@ public class ExtractTextAndIndexHandler
     {
         _logger.LogInformation("Processing batch of {Count} text extraction and index messages natively natively", messages.Length);
 
-        var extractedFiles = new List<(BackupFileEntry Entry, IReadOnlyList<TextChunk> Chunks, string RestoredPath)>();
+        var extractedFiles = new List<(BackupFileEntry Entry, IReadOnlyList<TextChunk> Chunks, string RestoredPath, string FullText)>();
 
         foreach (var message in messages)
         {
@@ -87,7 +87,7 @@ public class ExtractTextAndIndexHandler
                 var chunks = await _textChunker.ChunkTextAsync(extractedText, cancellationToken);
                 _statsLiveMonitor.IncrementExtractedChunk(chunks.Count);
 
-                extractedFiles.Add((fileEntry, chunks, message.RestoredFilePath));
+                extractedFiles.Add((fileEntry, chunks, message.RestoredFilePath, extractedText));
             }
             catch (Exception ex)
             {
@@ -119,12 +119,13 @@ public class ExtractTextAndIndexHandler
                 await _vectorStore.EnsureCollectionExistsAsync(finalVectorList.First().Vector.Length, cancellationToken);
             await _sparseIndex.EnsureIndexExistsAsync(cancellationToken);
 
+            var sparseRecords = extractedFiles.Select(f => (f.Entry.Id, 0, f.FullText));
             var vectorTask = _vectorStore.UpsertCrossFileChunkVectorsBatchAsync(finalVectorList, cancellationToken);
-            var sparseTask = _sparseIndex.IndexCrossFileChunksBatchAsync(allChunks, cancellationToken);
+            var sparseTask = _sparseIndex.IndexCrossFileChunksBatchAsync(sparseRecords, cancellationToken);
             await Task.WhenAll(vectorTask, sparseTask);
 
             _statsLiveMonitor.IncrementVector(finalVectorList.Count);
-            _statsLiveMonitor.IncrementSparse(allChunks.Count);
+            _statsLiveMonitor.IncrementSparse(extractedFiles.Count);
 
             foreach (var file in extractedFiles)
             {

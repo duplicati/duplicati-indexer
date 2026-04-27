@@ -241,6 +241,7 @@ public class DlistProcessor
                         BackupSourceId = backupSource.Id,
                         VersionAdded = version.UtcDateTime,
                         Path = file.Path,
+                        FileType = Path.GetExtension(file.Path).ToLowerInvariant(),
                         Hash = file.Hash,
                         Size = file.Size,
                         LastModified = file.Time.ToUniversalTime()

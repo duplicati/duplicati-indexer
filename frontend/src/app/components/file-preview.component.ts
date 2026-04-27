@@ -1,46 +1,139 @@
-import { Component, input, output, WritableSignal } from '@angular/core';
+import { Component, input, output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ShipAlert, ShipButton, ShipIcon, ShipProgressBar } from '@ship-ui/core';
+import { ShipButton, ShipIcon, ShipSpinner } from '@ship-ui/core';
+import { MarkdownPreviewComponent } from './markdown-preview.component';
+import { CodePreviewComponent } from './code-preview.component';
+import { WritableSignal, isSignal } from '@angular/core';
 
 export type FilePreviewData = {
   path: string;
-  content: WritableSignal<string>;
-  loading: WritableSignal<boolean>;
+  content: WritableSignal<string> | string;
+  loading?: WritableSignal<boolean> | boolean;
 };
 
 @Component({
   selector: 'app-file-preview',
   standalone: true,
-  imports: [CommonModule, ShipAlert, ShipButton, ShipIcon, ShipProgressBar],
+  imports: [CommonModule, ShipButton, ShipIcon, ShipSpinner, MarkdownPreviewComponent, CodePreviewComponent],
   template: `
-    <div class="preview-container" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; max-width: 800px; width: 90vw; max-height: 85vh;">
-      <div class="header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
-        <div style="flex: 1; min-width: 0;">
-          <h2 style="margin: 0; font-size: 1.25rem; word-break: break-all;">
-            <sh-icon size="small" style="margin-right: 8px;">file</sh-icon>
-            {{ data()?.path?.split('/')?.pop()?.split('\\\\')?.pop() || data()?.path }}
-          </h2>
-          <p style="margin: 4px 0 0 0; font-size: 0.875rem; opacity: 0.7; word-break: break-all;">{{ data()?.path }}</p>
+    <header header class="modal-header">
+      <div class="file-info">
+        <sh-icon>{{ getFileIcon() }}</sh-icon>
+        <span class="filename">{{ filename() }}</span>
+        <span class="filetype">{{ fileType() }}</span>
+      </div>
+      <button shButton class="icon small ghost" (click)="close()">
+        <sh-icon>x-square</sh-icon>
+      </button>
+    </header>
+    
+    <div content class="modal-body">
+      @if (isLoading()) {
+        <div class="loading-state">
+          <sh-spinner></sh-spinner> Loading preview...
         </div>
-        <button shButton variant="flat" size="small" (click)="close()">Close</button>
-      </div>
-
-      <sh-alert variant="primary" style="flex-shrink: 0;">
-        <span style="font-weight: 500;">Note:</span> This is a textual preview reconstructed from indexed database vector chunks, not the original raw file.
-      </sh-alert>
-
-      <div class="content-wrapper" style="flex: 1; overflow-y: auto; background: var(--sh-surface-ground, #111113); border: 1px solid var(--sh-border-color, #2b2b2b); border-radius: 8px; padding: 16px; position: relative; overflow-x: hidden;">
-        @if (data()?.loading?.()) {
-          <sh-progress-bar class="indeterminate" color="primary" style="position: absolute; top: 0; left: 0; right: 0; width: 100%;"></sh-progress-bar>
+      } @else {
+        @if (isMarkdown()) {
+          @defer (on immediate) {
+            <app-markdown-preview [content]="resolvedContent()"></app-markdown-preview>
+          } @placeholder {
+            <div class="loading-state">Loading markdown parser...</div>
+          }
+        } @else {
+          @defer (on immediate) {
+            <app-code-preview [content]="resolvedContent()" [fileType]="fileType()"></app-code-preview>
+          } @placeholder {
+            <div class="loading-state">Loading code highlighter...</div>
+          }
         }
-        <pre style="margin: 0; font-family: monospace; font-size: 0.875rem; white-space: pre-wrap; word-break: break-word; color: white; opacity: {{ data()?.loading?.() ? 0.5 : 1 }};">{{ data()?.content?.() }}</pre>
-      </div>
+      }
     </div>
-  `
+  `,
+  styles: [`
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 24px;
+    }
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+    .filename {
+      font-weight: 600;
+      color: var(--sh-text-primary);
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .filetype {
+      font-size: 11px;
+      color: var(--sh-text-secondary);
+      background: var(--sh-base-3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .modal-body {
+      background: var(--sh-surface-ground);
+      min-height: 200px;
+    }
+    .loading-state {
+      padding: 64px 32px;
+      text-align: center;
+      color: var(--sh-text-secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+  `]
 })
 export class FilePreviewComponent {
-  data = input<FilePreviewData>();
+  data = input.required<FilePreviewData>();
   closed = output<void>();
+
+  filename = computed(() => {
+    const path = this.data().path;
+    return path ? path.split('/').pop() || 'Unknown' : 'Unknown';
+  });
+
+  fileType = computed(() => {
+    const fn = this.filename();
+    const parts = fn.split('.');
+    return parts.length > 1 ? `.${parts.pop()}` : '';
+  });
+
+  isLoading = computed(() => {
+    const loading = this.data().loading;
+    if (loading === undefined) return false;
+    return isSignal(loading) ? loading() : loading;
+  });
+
+  resolvedContent = computed(() => {
+    const content = this.data().content;
+    return isSignal(content) ? content() : content;
+  });
+
+  isMarkdown(): boolean {
+    return this.fileType().toLowerCase() === '.md';
+  }
+
+  getFileIcon(): string {
+    const ext = this.fileType().toLowerCase().replace('.', '');
+    if (ext === 'md') return 'file-code';
+    if (ext === 'json') return 'brackets-curly';
+    if (ext === 'cs' || ext === 'ts' || ext === 'js' || ext === 'sh' || ext === 'py') return 'code';
+    if (ext === 'txt' || ext === 'log') return 'file-text';
+    return 'file';
+  }
 
   close() {
     this.closed.emit();

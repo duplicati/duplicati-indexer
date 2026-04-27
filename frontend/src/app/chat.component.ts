@@ -1,33 +1,35 @@
 import { CommonModule, Location } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
 import {
   AfterViewChecked,
   Component,
+  computed,
   ElementRef,
   inject,
   OnDestroy,
   OnInit,
   signal,
-  computed,
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
-  ShipAlert,
+  ShipAccordion,
   ShipButton,
   ShipCard,
+  ShipChip,
+  ShipDialogService,
   ShipDivider,
   ShipFormField,
   ShipIcon,
   ShipList,
   ShipSidenav,
   ShipSpinner,
-  ShipDialogService,
-  ShipChip
+  ShipTooltip,
 } from '@ship-ui/core';
-import { ConfirmDialogComponent } from './components/confirm-dialog/confirm-dialog.component';
 import { Subscription } from 'rxjs';
+import { ConfirmDialogComponent } from './components/confirm-dialog/confirm-dialog.component';
 import LogoComponent from './components/logo/logo.component';
+import { RelevancyRingComponent } from './components/relevancy-ring/relevancy-ring.component';
 import { SearchViewComponent } from './components/search-view/search-view';
 import { MarkdownPipe } from './markdown.pipe';
 import {
@@ -37,12 +39,19 @@ import {
   RagQueryRequest,
 } from './services/query.service';
 
+export interface ThoughtStep {
+  text?: string;
+  actionEvent?: RagQueryEvent;
+}
+
 export interface ConversationMessage {
   id: string;
   query: string;
   response: string;
   isLoading: boolean;
   events?: RagQueryEvent[];
+  thoughtProcess?: string;
+  thoughtSteps?: ThoughtStep[];
   timestamp?: Date;
   latestEvent?: RagQueryEvent;
 }
@@ -57,15 +66,17 @@ export interface ConversationMessage {
     ShipButton,
     ShipIcon,
     ShipCard,
-    ShipAlert,
     ShipSpinner,
     ShipFormField,
     ShipDivider,
     ShipChip,
+    ShipAccordion,
+    ShipTooltip,
 
     LogoComponent,
+    RelevancyRingComponent,
     SearchViewComponent,
-    MarkdownPipe
+    MarkdownPipe,
   ],
   templateUrl: './chat.component.html',
   styleUrl: './chat.component.scss',
@@ -87,15 +98,44 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
   sessions = signal<ChatSession[]>([]);
   isNavOpen = signal(true);
   isDarkMode = signal(false);
-  relevantFiles = signal<{path: string, score: number}[]>([]);
-  
+  relevantFiles = computed(() => {
+    const fileMap = new Map<string, number>();
+    let roundtrips = 0;
+
+    this.conversation().forEach((msg) => {
+      msg.events?.forEach((event) => {
+        if (event.eventType === 'relevant_files') {
+          roundtrips++;
+          try {
+            const parsed = JSON.parse(event.content);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((item) => {
+                if (item.path !== undefined) {
+                  fileMap.set(item.path, (fileMap.get(item.path) || 0) + item.score);
+                } else if (typeof item === 'string') {
+                  if (!fileMap.has(item)) fileMap.set(item, 0);
+                }
+              });
+            }
+          } catch (e) {}
+        }
+      });
+    });
+
+    const resolvedFiles = Array.from(fileMap.entries()).map(([path, sumScore]) => {
+      return { path, score: roundtrips > 0 ? sumScore / roundtrips : sumScore };
+    });
+    resolvedFiles.sort((a, b) => b.score - a.score);
+    return resolvedFiles;
+  });
+
   hoveredFiles = signal<string[] | null>(null);
   selectedFiles = signal<string[] | null>(null);
   filteredRelevantFiles = computed(() => {
-     const allFiles = this.relevantFiles();
-     const filter = this.selectedFiles();
-     if (!filter) return allFiles;
-     return allFiles.filter(f => filter.includes(f.path));
+    const allFiles = this.relevantFiles();
+    const filter = this.selectedFiles();
+    if (!filter) return allFiles;
+    return allFiles.filter((f) => filter.includes(f.path));
   });
   sidenavType = signal('simple');
   dbCount = signal(0);
@@ -123,7 +163,7 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
   ngOnInit(): void {
     this.fetchSessions();
     this.subscribeDbStats();
-    this.route.paramMap.subscribe(params => {
+    this.route.paramMap.subscribe((params) => {
       const chatId = params.get('id');
       if (chatId && this.sessionId() !== chatId) {
         this.loadSession(chatId);
@@ -133,7 +173,6 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
           this.abortQuery();
           this.queryText.set('');
           this.conversation.set([]);
-          this.relevantFiles.set([]);
           this.hasSubmitted.set(false);
           this.sessionId.set(null);
         }
@@ -148,7 +187,7 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
         this.sparseCount.set(stats.sparseCount);
         this.metadataCount.set(stats.metadataCount);
       },
-      error: (err) => console.error('Failed to stream DB stats organically', err)
+      error: (err) => console.error('Failed to stream DB stats organically', err),
     });
   }
 
@@ -227,32 +266,34 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
 
   openFilePreview(path: string): void {
     console.log(`[Frontend] Triggered openFilePreview for: ${path}`);
-    
-    // Open dialog immediately with loading state
-    import('./components/file-preview.component').then(m => {
-      const dialogData = { 
-        path: path, 
-        content: signal(''), 
-        loading: signal(true) 
-      };
-      
-      this.dialog.open(m.FilePreviewComponent, {
-        data: dialogData
-      });
 
-      this.queryService.getFileContent(path).subscribe({
-        next: (response) => {
-          console.log(`[Frontend] Received content for: ${path}`, response);
-          dialogData.content.set(response.content);
-          dialogData.loading.set(false);
-        },
-        error: (err) => {
-          console.error('[Frontend] Failed to preview file via API:', err);
-          dialogData.content.set('Failed to load file content.\n\nError: ' + err.message);
-          dialogData.loading.set(false);
-        }
-      });
-    }).catch(err => console.error('Failed to load modal component', err));
+    // Open dialog immediately with loading state
+    import('./components/file-preview.component')
+      .then((m) => {
+        const dialogData = {
+          path: path,
+          content: signal(''),
+          loading: signal(true),
+        };
+
+        this.dialog.open(m.FilePreviewComponent, {
+          data: dialogData,
+        });
+
+        this.queryService.getFileContent(path).subscribe({
+          next: (response) => {
+            console.log(`[Frontend] Received content for: ${path}`, response);
+            dialogData.content.set(response.content);
+            dialogData.loading.set(false);
+          },
+          error: (err) => {
+            console.error('[Frontend] Failed to preview file via API:', err);
+            dialogData.content.set('Failed to load file content.\n\nError: ' + err.message);
+            dialogData.loading.set(false);
+          },
+        });
+      })
+      .catch((err) => console.error('Failed to load modal component', err));
   }
 
   loadSession(id: string): void {
@@ -261,43 +302,49 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
     this.hasSubmitted.set(true);
     this.isLoading.set(true);
     this.conversation.set([]); // Clear temporarily until loaded
-    this.relevantFiles.set([]); // Reset on changing session
     this.router.navigate(['/session', id]);
 
     this.queryService.getSessionHistory(id).subscribe({
       next: (details) => {
-        const fileMap = new Map<string, number>();
         const historyConv = details.history.map((h) => {
-          let lastThoughtEvent: RagQueryEvent | null = null;
+          const thoughtSteps: ThoughtStep[] = [];
+          let thoughtProcess = '';
+
           // Extract any files found historically
-          h.events?.forEach(event => {
+          h.events?.forEach((event) => {
             if (event.eventType === 'thought') {
-              lastThoughtEvent = event;
-            } else if (event.eventType === 'action' && lastThoughtEvent) {
-              lastThoughtEvent.actionContent = event.content;
+              const cleanContent = event.content.replace(/```json\n?/g, '').replace(/```/g, '');
+              thoughtProcess = (thoughtProcess ? thoughtProcess + '\n\n' : '') + cleanContent;
+              thoughtSteps.push({ text: cleanContent });
+            } else if (event.eventType === 'action') {
+              if (thoughtSteps.length === 0) thoughtSteps.push({ text: 'Taking action...' });
+              thoughtSteps[thoughtSteps.length - 1].actionEvent = event;
             }
-            
+
             if (event.eventType === 'relevant_files') {
               try {
                 // Handle backwards compatibility (string[]) or new schema ({path, score}[])
                 const parsed = JSON.parse(event.content);
                 const localPaths: string[] = [];
                 if (Array.isArray(parsed)) {
-                  parsed.forEach(item => {
+                  parsed.forEach((item) => {
                     if (typeof item === 'string') {
-                      if (!fileMap.has(item)) fileMap.set(item, 0);
                       localPaths.push(item);
                     } else if (item.path !== undefined) {
-                      const currentScore = fileMap.get(item.path) || 0;
-                      fileMap.set(item.path, currentScore + item.score);
                       localPaths.push(item.path);
                     }
                   });
                 }
-                if (lastThoughtEvent && localPaths.length > 0) {
-                  lastThoughtEvent.associatedFiles = localPaths;
+                if (localPaths.length > 0) {
+                  // Attach to the most recent action
+                  for (let i = thoughtSteps.length - 1; i >= 0; i--) {
+                    if (thoughtSteps[i].actionEvent) {
+                      thoughtSteps[i].actionEvent!.associatedFiles = localPaths;
+                      break;
+                    }
+                  }
                 }
-              } catch(e) {}
+              } catch (e) {}
             }
           });
 
@@ -305,15 +352,14 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
             id: h.id,
             query: h.originalQuery,
             response: h.response,
-            events: h.events?.filter(e => e.eventType === 'thought'),
+            events: h.events?.filter((e) => e.eventType !== 'thought' && e.eventType !== 'action'),
+            thoughtSteps: thoughtSteps,
+            thoughtProcess: thoughtProcess,
             isLoading: false,
-            timestamp: new Date(h.queryTimestamp)
+            timestamp: new Date(h.queryTimestamp),
           };
         });
-        const resolvedFiles = Array.from(fileMap.entries()).map(([path, score]) => ({ path, score }));
-        resolvedFiles.sort((a, b) => b.score - a.score); // Highest relevance first
-        
-        this.relevantFiles.set(resolvedFiles);
+
         this.conversation.set(historyConv);
         this.isLoading.set(false);
         this.requestScroll();
@@ -361,13 +407,10 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
       query: query,
       response: '',
       isLoading: true,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     this.conversation.update((c) => [...c, newMessage]);
-    if (this.conversation().length === 1) {
-      this.relevantFiles.set([]); // Clear on purely new conversation
-    }
     this.queryText.set('');
     this.requestScroll();
 
@@ -409,52 +452,65 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
                 message.latestEvent = event;
               }
             } else if (event.eventType === 'relevant_files') {
+              message.events.push(event);
               try {
                 // Parse either old schema (string[]) or new schema ({path, score}[])
                 const parsed = JSON.parse(event.content);
                 const localPaths: string[] = [];
-                this.relevantFiles.update(current => {
-                  const map = new Map<string, number>();
-                  current.forEach(c => map.set(c.path, c.score));
-                  
-                  if (Array.isArray(parsed)) {
-                    parsed.forEach(item => {
-                      if (typeof item === 'string') {
-                        if (!map.has(item)) map.set(item, 0);
-                        localPaths.push(item);
-                      } else if (item.path !== undefined) {
-                        const existingScore = map.get(item.path) || 0;
-                        map.set(item.path, existingScore + item.score);
-                        localPaths.push(item.path);
-                      }
-                    });
-                  }
-                  
-                  const resolvedFiles = Array.from(map.entries()).map(([path, score]) => ({ path, score }));
-                  resolvedFiles.sort((a, b) => b.score - a.score);
-                  return resolvedFiles;
-                });
-                
-                if (localPaths.length > 0 && message.events && message.events.length > 0) {
-                   for (let i = message.events.length - 1; i >= 0; i--) {
-                       if (message.events[i].eventType === 'thought') {
-                           message.events[i].associatedFiles = localPaths;
-                           break;
-                       }
-                   }
+
+                if (Array.isArray(parsed)) {
+                  parsed.forEach((item) => {
+                    if (typeof item === 'string') {
+                      localPaths.push(item);
+                    } else if (item.path !== undefined) {
+                      localPaths.push(item.path);
+                    }
+                  });
                 }
-              } catch(e) {
+
+                if (localPaths.length > 0 && message.events && message.events.length > 0) {
+                  for (let i = message.events.length - 1; i >= 0; i--) {
+                    if (message.events[i].eventType === 'action') {
+                      message.events[i].associatedFiles = localPaths;
+                      break;
+                    }
+                  }
+                }
+              } catch (e) {
                 console.error('Failed to parse relevant_files', e);
               }
             } else if (event.eventType === 'action') {
-              if (message.events.length > 0) {
-                 for (let i = message.events.length - 1; i >= 0; i--) {
-                    if (message.events[i].eventType === 'thought') {
-                       message.events[i].actionContent = event.content;
-                       break;
-                    }
-                 }
+              message.events.push(event);
+              message.latestEvent = event;
+              if (!message.thoughtSteps) message.thoughtSteps = [];
+              if (message.thoughtSteps.length === 0)
+                message.thoughtSteps.push({ text: 'Taking action...' });
+              message.thoughtSteps[message.thoughtSteps.length - 1].actionEvent = event;
+            } else if (event.eventType === 'thought_chunk') {
+              message.thoughtProcess = ((message.thoughtProcess || '') + event.content)
+                .replace(/```json\n?/g, '')
+                .replace(/```/g, '');
+              if (!message.thoughtSteps) message.thoughtSteps = [];
+              let lastStep = message.thoughtSteps[message.thoughtSteps.length - 1];
+              if (!lastStep || lastStep.actionEvent) {
+                lastStep = { text: '' };
+                message.thoughtSteps.push(lastStep);
               }
+              lastStep.text = ((lastStep.text || '') + event.content)
+                .replace(/```json\n?/g, '')
+                .replace(/```/g, '');
+              message.latestEvent = { eventType: 'thought', content: 'Thinking...' };
+            } else if (event.eventType === 'thought') {
+              if (message.thoughtProcess && !message.thoughtProcess.endsWith('\n\n')) {
+                message.thoughtProcess += '\n\n';
+              }
+              if (message.thoughtSteps && message.thoughtSteps.length > 0) {
+                let lastStep = message.thoughtSteps[message.thoughtSteps.length - 1];
+                if (lastStep.text && !lastStep.text.endsWith('\n\n')) {
+                  lastStep.text += '\n\n';
+                }
+              }
+              message.latestEvent = { eventType: 'thought', content: 'Thinking...' };
             } else {
               message.events.push(event);
             }
@@ -491,13 +547,13 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
         data: {
           title: 'Clear conversation?',
           message: 'Are you sure you want to start a new conversation?',
-          confirmText: 'Clear'
+          confirmText: 'Clear',
         },
         closed: (result: boolean) => {
           if (result) {
             this.clearQuery();
           }
-        }
+        },
       });
       return;
     }
@@ -512,45 +568,19 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
     this.abortQuery();
     this.queryText.set('');
     this.conversation.set([]);
-    this.relevantFiles.set([]);
     this.hasSubmitted.set(false);
     this.sessionId.set(null);
     this.router.navigate(['/']);
   }
 
   revertMessage(messageId: string): void {
-    this.conversation.update(c => {
-      const idx = c.findIndex(m => m.id === messageId);
+    this.conversation.update((c) => {
+      const idx = c.findIndex((m) => m.id === messageId);
       if (idx !== -1) {
         this.abortQuery();
         const msg = c[idx];
         this.queryText.set(msg.query);
         const newConversation = c.slice(0, idx); // remove this message and everything after it
-        
-        // Recalculate relevant files from remaining conversation
-        const fileMap = new Map<string, number>();
-        newConversation.forEach(msg => {
-          msg.events?.forEach(event => {
-            if (event.eventType === 'relevant_files') {
-              try {
-                const parsed = JSON.parse(event.content);
-                if (Array.isArray(parsed)) {
-                  parsed.forEach(item => {
-                    if (typeof item === 'string') {
-                      if (!fileMap.has(item)) fileMap.set(item, 0);
-                    } else if (item.path !== undefined) {
-                      const currentScore = fileMap.get(item.path) || 0;
-                      fileMap.set(item.path, currentScore + item.score);
-                    }
-                  });
-                }
-              } catch(e) {}
-            }
-          });
-        });
-        const resolvedFiles = Array.from(fileMap.entries()).map(([path, score]) => ({ path, score }));
-        resolvedFiles.sort((a, b) => b.score - a.score);
-        this.relevantFiles.set(resolvedFiles);
 
         return newConversation;
       }
@@ -559,8 +589,12 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
     const sid = this.sessionId();
     if (sid) {
       this.queryService.revertSession(sid, messageId).subscribe({
-        next: () => console.log(`[Frontend] Successfully reverted session ${sid} on backend to message ${messageId}`),
-        error: (err) => console.error(`[Frontend] Failed to revert session ${sid} on backend:`, err)
+        next: () =>
+          console.log(
+            `[Frontend] Successfully reverted session ${sid} on backend to message ${messageId}`,
+          ),
+        error: (err) =>
+          console.error(`[Frontend] Failed to revert session ${sid} on backend:`, err),
       });
     }
 
@@ -570,26 +604,26 @@ export default class ChatComponent implements AfterViewChecked, OnDestroy, OnIni
   }
 
   hoverEvent(event: RagQueryEvent | null) {
-      if (event && event.associatedFiles && event.associatedFiles.length > 0) {
-         this.hoveredFiles.set(event.associatedFiles);
-      } else {
-         this.hoveredFiles.set(null);
-      }
+    if (event && event.associatedFiles && event.associatedFiles.length > 0) {
+      this.hoveredFiles.set(event.associatedFiles);
+    } else {
+      this.hoveredFiles.set(null);
+    }
   }
 
   clickEvent(event: RagQueryEvent) {
-      if (!event.associatedFiles || event.associatedFiles.length === 0) return;
-      
-      const current = this.selectedFiles();
-      // toggle off if same
-      if (current && current.join(',') === event.associatedFiles.join(',')) {
-         this.selectedFiles.set(null);
-      } else {
-         this.selectedFiles.set(event.associatedFiles);
-      }
+    if (!event.associatedFiles || event.associatedFiles.length === 0) return;
+
+    const current = this.selectedFiles();
+    // toggle off if same
+    if (current && current.join(',') === event.associatedFiles.join(',')) {
+      this.selectedFiles.set(null);
+    } else {
+      this.selectedFiles.set(event.associatedFiles);
+    }
   }
 
   clearFileFilter() {
-     this.selectedFiles.set(null);
+    this.selectedFiles.set(null);
   }
 }

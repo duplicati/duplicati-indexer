@@ -1,4 +1,6 @@
 using DuplicatiIndexer.AdapterInterfaces;
+using DuplicatiIndexer.Data;
+using DuplicatiIndexer.Data.Entities;
 
 namespace DuplicatiIndexer.Services;
 
@@ -11,24 +13,23 @@ public class HybridSearchService : IHybridSearchService
     private readonly IVectorStore _vectorStore;
     private readonly ISparseIndex _sparseIndex;
     private readonly IEmbeddingService _embeddingService;
+    private readonly ISurrealRepository _repository;
     private readonly ILogger<HybridSearchService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HybridSearchService"/> class.
     /// </summary>
-    /// <param name="vectorStore">The vector store for dense search.</param>
-    /// <param name="sparseIndex">The sparse index for full-text search.</param>
-    /// <param name="embeddingService">The embedding service for generating query embeddings.</param>
-    /// <param name="logger">The logger.</param>
     public HybridSearchService(
         IVectorStore vectorStore,
         ISparseIndex sparseIndex,
         IEmbeddingService embeddingService,
+        ISurrealRepository repository,
         ILogger<HybridSearchService> logger)
     {
         _vectorStore = vectorStore;
         _sparseIndex = sparseIndex;
         _embeddingService = embeddingService;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -120,6 +121,30 @@ public class HybridSearchService : IHybridSearchService
                 _logger.LogDebug(
                     "Result {Id} found in sources: {Sources} (RRF score: {Score})",
                     result.Id, string.Join(", ", (List<string>)sources), result.Score);
+            }
+        }
+
+        // Hydrate Filename and FileType
+        var uniqueFileIds = finalResults
+            .Where(r => r.Metadata.ContainsKey("FileId") && !string.IsNullOrEmpty(r.Metadata["FileId"]?.ToString()))
+            .Select(r => r.Metadata["FileId"]!.ToString()!)
+            .Distinct()
+            .ToList();
+
+        if (uniqueFileIds.Any())
+        {
+            var tasks = uniqueFileIds.Select(id => _repository.GetAsync<BackupFileEntry>(Guid.Parse(id), cancellationToken));
+            var fileEntries = await Task.WhenAll(tasks);
+            var fileMap = fileEntries.Where(e => e != null).ToDictionary(e => e!.Id.ToString());
+
+            foreach (var result in finalResults)
+            {
+                if (result.Metadata.TryGetValue("FileId", out var fileIdObj) && fileIdObj is string fileIdStr && fileMap.TryGetValue(fileIdStr, out var entry))
+                {
+                    result.Metadata["Filename"] = Path.GetFileName(entry.Path);
+                    result.Metadata["FileType"] = entry.FileType;
+                    result.Metadata["Path"] = entry.Path;
+                }
             }
         }
 

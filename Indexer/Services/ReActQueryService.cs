@@ -143,13 +143,16 @@ Use query_file_metadata when the user asks about:
 
 You have two ways to respond:
 
-1. TOOL USE (JSON FORMAT):
-If you need to search or use a tool, you MUST respond in the strict JSON format below:
+1. TOOL USE:
+If you need to search or use a tool, you MUST respond in the format below:
+
+Thought: Your reasoning about what to do next
+```json
 {
-    ""thought"": ""Your reasoning about what to do next"",
     ""action"": ""search_database"" or ""query_file_metadata"",
     ""action_input"": ""your search query or file path""
 }
+```
 
 Available actions:
 - ""search_database"" - Use this to find files and content in the backup database. Provide search keywords as action_input (keep it concise, 1-5 keywords is usually best).
@@ -162,7 +165,7 @@ Guidelines:
 - ALWAYS start by searching the database unless the question is purely conversational
 - For questions about ""when was file xxx last modified?"", use query_file_metadata with the file path
 - You can search multiple times with different queries to gather more information
-- CRITICAL: Never combine JSON and raw text in the same response. Choose one format or the other based on whether you are taking an action or answering the user.
+- CRITICAL: Never combine JSON tool calls and the final answer in the same response. Choose one format or the other based on whether you are taking an action or answering the user.
 """;
 
     /// <summary>
@@ -214,7 +217,11 @@ Guidelines:
 
         Func<string, string, Task> emitEvent = async (string type, string content) =>
         {
-            queryEvents.Add(new QueryHistoryEvent { EventType = type, Content = content });
+            if (type != "thought_chunk" && type != "answer_chunk")
+            {
+                queryEvents.Add(new QueryHistoryEvent { EventType = type, Content = content });
+            }
+            
             if (onEvent != null)
             {
                 await onEvent(new RagQueryEvent { EventType = type, Content = content });
@@ -457,47 +464,160 @@ Guidelines:
         };
 
         var stream = _llmClient.StreamCompleteAsync(messages, cancellationToken);
-        var isFirstToken = true;
         var isJsonMode = false;
+        var isThoughtMode = false;
+        var modeDetected = false;
+        var jsonMarkerHit = false;
         var fullResponseBuilder = new System.Text.StringBuilder();
+        var lastExtractedThought = "";
 
         await foreach (var chunk in stream.WithCancellation(cancellationToken))
         {
             if (string.IsNullOrEmpty(chunk)) continue;
 
-            if (isFirstToken)
-            {
-                var trimmed = chunk.TrimStart();
-                if (string.IsNullOrEmpty(trimmed)) continue;
+            fullResponseBuilder.Append(chunk);
+            var currentResponse = fullResponseBuilder.ToString();
+            var trimmedResponse = currentResponse.TrimStart();
 
-                isFirstToken = false;
-                if (trimmed.StartsWith("{") || trimmed.StartsWith("```json") || trimmed.StartsWith("<|tool_call>"))
+            // Check for JSON transition at ANY time
+            if (!isJsonMode)
+            {
+                // Find the first opening brace
+                var firstBrace = currentResponse.IndexOf('{');
+                
+                if (currentResponse.Contains("```json") || currentResponse.Contains("<|tool_call>"))
                 {
                     isJsonMode = true;
                 }
+                else if (firstBrace >= 0)
+                {
+                    // Check if everything before the brace is just whitespace, markdown ticks, or "json"
+                    var prefix = currentResponse.Substring(0, firstBrace).Trim().ToLowerInvariant();
+                    if (string.IsNullOrEmpty(prefix) || 
+                        prefix == "```" || 
+                        prefix == "```json" || 
+                        prefix == "json" ||
+                        prefix.EndsWith("action:") || 
+                        prefix.EndsWith("tool_call"))
+                    {
+                        isJsonMode = true;
+                    }
+                }
+                else if (isThoughtMode && chunk.Contains("{") && currentResponse.Contains("\n{"))
+                {
+                    isJsonMode = true;
+                }
+                
+                if (isJsonMode)
+                {
+                    modeDetected = true;
+                }
             }
 
-            fullResponseBuilder.Append(chunk);
-
-            if (!isJsonMode && emitEvent != null)
+            // Check for Thought transition
+            if (!isThoughtMode && !isJsonMode && currentResponse.Contains("Thought:"))
             {
-                // Stream plain text final answer chunks directly to the UI
+                isThoughtMode = true;
+                modeDetected = true;
+                
+                // Extract everything from "Thought:" onwards and stream it as the first thought chunk
+                var thoughtStartIndex = currentResponse.IndexOf("Thought:");
+                var thoughtText = currentResponse.Substring(thoughtStartIndex).Replace("```json", "").Replace("```", "");
+                
+                if (emitEvent != null && !string.IsNullOrEmpty(thoughtText))
+                {
+                    await emitEvent("thought_chunk", thoughtText);
+                }
+                continue; // We already streamed the relevant part of this chunk
+            }
+
+            if (!modeDetected)
+            {
+                if (trimmedResponse.Length > 100)
+                {
+                    modeDetected = true; // Default to AnswerMode
+                    if (emitEvent != null)
+                    {
+                        await emitEvent("answer_chunk", currentResponse);
+                    }
+                }
+                else
+                {
+                    continue; // Keep buffering
+                }
+            }
+
+            if (isJsonMode)
+            {
+                // Option 2: Regex extraction for embedded thought in JSON
+                var match = System.Text.RegularExpressions.Regex.Match(currentResponse, @"\""thought\""\s*:\s*\""((?:[^\""\\]|\\.)*)\""?");
+                if (match.Success)
+                {
+                    var rawThought = match.Groups[1].Value;
+                    string currentThought = rawThought;
+                    bool canUnescape = true;
+                    try 
+                    {
+                        // Don't try to unescape if it ends with a single backslash (partial escape sequence)
+                        if (!rawThought.EndsWith(@"\") || rawThought.EndsWith(@"\\"))
+                        {
+                            currentThought = System.Text.RegularExpressions.Regex.Unescape(rawThought);
+                        }
+                        else
+                        {
+                            canUnescape = false;
+                        }
+                    }
+                    catch 
+                    {
+                        canUnescape = false;
+                    }
+
+                    if (canUnescape && currentThought.Length > lastExtractedThought.Length)
+                    {
+                        if (currentThought.StartsWith(lastExtractedThought))
+                        {
+                            var newChunk = currentThought.Substring(lastExtractedThought.Length);
+                            lastExtractedThought = currentThought;
+                            
+                            if (emitEvent != null)
+                            {
+                                await emitEvent("thought_chunk", newChunk);
+                            }
+                        }
+                        else
+                        {
+                            // If unescape causes a mismatch, resync and recover on next chunk
+                            lastExtractedThought = currentThought;
+                        }
+                    }
+                }
+            }
+            else if (isThoughtMode)
+            {
+                var cleanChunk = chunk.Replace("```json", "").Replace("```", "");
+                if (emitEvent != null && !string.IsNullOrEmpty(cleanChunk))
+                {
+                    await emitEvent("thought_chunk", cleanChunk);
+                }
+            }
+            else if (emitEvent != null)
+            {
+                // Answer mode
                 await emitEvent("answer_chunk", chunk);
             }
         }
 
         var response = fullResponseBuilder.ToString();
 
-        if (!isJsonMode)
+        if (!modeDetected && emitEvent != null && !isJsonMode)
         {
-            // Synthesize the final answer action
-            return new ReActStep
-            {
-                StepNumber = stepNumber,
-                Thought = "Provided raw text final answer directly to user.",
-                Action = "provide_answer",
-                ActionInput = response.Trim()
-            };
+            await emitEvent("answer_chunk", response);
+        }
+
+        if (!isJsonMode && !isThoughtMode && !modeDetected)
+        {
+            // Just a safety check, but let ParseAgentAction handle the logic
         }
 
         var action = ParseAgentAction(response);
@@ -539,7 +659,7 @@ Guidelines:
                 }
             }
 
-            // Try to extract JSON from the response (in case there's extra text)
+            // Try to extract JSON from the response (in case there's extra text or thought blocks)
             var jsonStart = response.IndexOf('{');
             var jsonEnd = response.LastIndexOf('}');
 
@@ -549,6 +669,12 @@ Guidelines:
                 var action = JsonSerializer.Deserialize<AgentAction>(json, _jsonOptions);
                 if (action != null && !string.IsNullOrEmpty(action.Action))
                 {
+                    // Extract thought from the text before the JSON block if available
+                    var textBeforeJson = response.Substring(0, jsonStart).Trim();
+                    if (textBeforeJson.StartsWith("Thought:"))
+                    {
+                        action.Thought = textBeforeJson.Substring(8).Trim();
+                    }
                     return action;
                 }
             }
@@ -556,7 +682,7 @@ Guidelines:
             // Fallback: treat the whole response as the answer or extract partial fields
             var cleanedResponse = response.Trim();
             
-            if (cleanedResponse.Contains("\"thought\"") || cleanedResponse.StartsWith("{") || cleanedResponse.StartsWith("```json"))
+            if (cleanedResponse.StartsWith("Thought:") || cleanedResponse.Contains("\"thought\"") || cleanedResponse.StartsWith("{") || cleanedResponse.StartsWith("```json"))
             {
                 string textContent = cleanedResponse;
                 bool wasInterrupted = !cleanedResponse.EndsWith("}");
@@ -569,11 +695,12 @@ Guidelines:
                 }
                 else
                 {
-                    // Fallback to extracting the thought
-                    var thoughtMatch = System.Text.RegularExpressions.Regex.Match(cleanedResponse, @"""thought""\s*:\s*""([\s\S]*?)(?:""\s*,|""\s*}|$)");
-                    if (thoughtMatch.Success)
+                    // Fallback to extracting the thought if present
+                    if (cleanedResponse.StartsWith("Thought:"))
                     {
-                        textContent = thoughtMatch.Groups[1].Value;
+                        var nlIdx = cleanedResponse.IndexOf('\n');
+                        if (nlIdx > 0) textContent = cleanedResponse.Substring(8, nlIdx - 8).Trim();
+                        else textContent = cleanedResponse.Substring(8).Trim();
                     }
                 }
                 
@@ -605,8 +732,8 @@ Guidelines:
 
             return new AgentAction
             {
-                Thought = $"Parsing the response directly [Debug: startsWithMark={cleanedResponse.StartsWith("```json")}, containsThought={cleanedResponse.Contains("\"thought\"")}, startChars='{(cleanedResponse.Length > 0 ? (int)cleanedResponse[0] : 0)}']",
-                Action = "error_retry",
+                Thought = "Provided raw text final answer directly to user.",
+                Action = "provide_answer",
                 ActionInputElement = JsonDocument.Parse(JsonSerializer.Serialize(cleanedResponse)).RootElement
             };
         }
@@ -640,6 +767,11 @@ Guidelines:
             {
                 // Push the explicit vector mathematical scores down to the frontend!
                 double maxScore = results.Max(r => r.Score);
+                
+                // Filter results to only keep those with a normalized score >= 0.5
+                // This ensures we only use context that is highly relevant relative to the best match.
+                results = results.Where(r => maxScore > 0 && (r.Score / maxScore) >= 0.5).ToList();
+                
                 var relevantPayload = new List<object>();
 
                 foreach (var r in results)

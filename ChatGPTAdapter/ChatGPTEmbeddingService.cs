@@ -42,6 +42,41 @@ public class ChatGPTEmbeddingService : IEmbeddingService
         var models = _config.EmbedModel.Split(',').Select(m => m.Trim()).ToArray();
         var selectedModel = models[Random.Shared.Next(models.Length)];
 
+        if (_apiKey == "lm-studio")
+        {
+            try
+            {
+                var v0ModelsUrl = url.Replace("/v1/embeddings", "/api/v0/models");
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Get, v0ModelsUrl);
+                var modelsResponse = await _httpClient.SendAsync(requestMessage, cancellationToken);
+                if (modelsResponse.IsSuccessStatusCode)
+                {
+                    var modelsJson = await modelsResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+                    if (modelsJson.TryGetProperty("data", out var dataArray))
+                    {
+                        foreach (var m in dataArray.EnumerateArray())
+                        {
+                            if (m.TryGetProperty("state", out var stateProp) && stateProp.GetString() == "loaded")
+                            {
+                                if (m.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "embedding")
+                                {
+                                    if (m.TryGetProperty("id", out var idProp))
+                                    {
+                                        selectedModel = idProp.GetString();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to inspect LM Studio loaded state via /api/v0/models for embeddings");
+            }
+        }
+
         var requestBody = new
         {
             model = selectedModel,
@@ -87,6 +122,41 @@ public class ChatGPTEmbeddingService : IEmbeddingService
         // Distribute array batch load dynamically across potentially scaled LMStudio instances via model arrays
         var models = _config.EmbedModel.Split(',').Select(m => m.Trim()).ToArray();
         var selectedModel = models[Random.Shared.Next(models.Length)];
+
+        if (_apiKey == "lm-studio")
+        {
+            try
+            {
+                var v0ModelsUrl = url.Replace("/v1/embeddings", "/api/v0/models");
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Get, v0ModelsUrl);
+                var modelsResponse = await _httpClient.SendAsync(requestMessage, cancellationToken);
+                if (modelsResponse.IsSuccessStatusCode)
+                {
+                    var modelsJson = await modelsResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+                    if (modelsJson.TryGetProperty("data", out var dataArray))
+                    {
+                        foreach (var m in dataArray.EnumerateArray())
+                        {
+                            if (m.TryGetProperty("state", out var stateProp) && stateProp.GetString() == "loaded")
+                            {
+                                if (m.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "embedding")
+                                {
+                                    if (m.TryGetProperty("id", out var idProp))
+                                    {
+                                        selectedModel = idProp.GetString();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to inspect LM Studio loaded state via /api/v0/models for batch embeddings");
+            }
+        }
 
         var requestBody = new
         {

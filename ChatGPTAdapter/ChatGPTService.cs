@@ -53,11 +53,11 @@ public class ChatGPTService : ILLMClient
         object requestBody;
         if (_apiKey == "lm-studio")
         {
-            bool isModelLoaded = false;
             try
             {
                 var v0ModelsUrl = url.Replace("/v1/chat/completions", "/api/v0/models");
-                var modelsResponse = await _httpClient.GetAsync(v0ModelsUrl, cancellationToken);
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Get, v0ModelsUrl);
+                var modelsResponse = await _httpClient.SendAsync(requestMessage, cancellationToken);
                 if (modelsResponse.IsSuccessStatusCode)
                 {
                     var modelsJson = await modelsResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
@@ -72,7 +72,10 @@ public class ChatGPTService : ILLMClient
                                     var typeStr = typeProp.GetString();
                                     if (typeStr == "llm" || typeStr == "vlm")
                                     {
-                                        isModelLoaded = true;
+                                        if (m.TryGetProperty("id", out var idProp))
+                                        {
+                                            model = idProp.GetString();
+                                        }
                                         break;
                                     }
                                 }
@@ -86,26 +89,11 @@ public class ChatGPTService : ILLMClient
                 _logger.LogWarning(ex, "Failed to inspect LM Studio loaded state via /api/v0/models");
             }
 
-            if (isModelLoaded)
+            requestBody = new
             {
-                // Already loaded, act as proxy without triggering JIT
-                requestBody = new
-                {
-                    model = model,
-                    messages = messageList
-                };
-            }
-            else
-            {
-                // Not loaded, force JIT load with requested context bounds
-                requestBody = new
-                {
-                    model = model,
-                    messages = messageList,
-                    n_ctx = 8192,
-                    n_batch = 8192
-                };
-            }
+                model = model,
+                messages = messageList
+            };
         }
         else
         {
@@ -152,12 +140,61 @@ public class ChatGPTService : ILLMClient
         var model = _config.Model;
         var messageList = messages.Select(m => new { role = ToRoleString(m.Role), content = m.Content }).ToArray();
 
-        var requestBody = new
+        object requestBody;
+        if (_apiKey == "lm-studio")
         {
-            model = model,
-            messages = messageList,
-            stream = true
-        };
+            try
+            {
+                var v0ModelsUrl = url.Replace("/v1/chat/completions", "/api/v0/models");
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Get, v0ModelsUrl);
+                var modelsResponse = await _httpClient.SendAsync(requestMessage, cancellationToken);
+                if (modelsResponse.IsSuccessStatusCode)
+                {
+                    var modelsJson = await modelsResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+                    if (modelsJson.TryGetProperty("data", out var dataArray))
+                    {
+                        foreach (var m in dataArray.EnumerateArray())
+                        {
+                            if (m.TryGetProperty("state", out var stateProp) && stateProp.GetString() == "loaded")
+                            {
+                                if (m.TryGetProperty("type", out var typeProp))
+                                {
+                                    var typeStr = typeProp.GetString();
+                                    if (typeStr == "llm" || typeStr == "vlm")
+                                    {
+                                        if (m.TryGetProperty("id", out var idProp))
+                                        {
+                                            model = idProp.GetString();
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to inspect LM Studio loaded state via /api/v0/models");
+            }
+
+            requestBody = new
+            {
+                model = model,
+                messages = messageList,
+                stream = true
+            };
+        }
+        else
+        {
+            requestBody = new
+            {
+                model = model,
+                messages = messageList,
+                stream = true
+            };
+        }
 
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -191,19 +228,20 @@ public class ChatGPTService : ILLMClient
                 try
                 {
                     using var doc = JsonDocument.Parse(data);
-                    var choices = doc.RootElement.GetProperty("choices");
-                    if (choices.GetArrayLength() > 0)
+                    if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
                     {
-                        var delta = choices[0].GetProperty("delta");
-                        if (delta.TryGetProperty("content", out var contentProp))
+                        if (choices[0].TryGetProperty("delta", out var delta))
                         {
-                            contentToYield = contentProp.GetString();
+                            if (delta.TryGetProperty("content", out var contentProp))
+                            {
+                                contentToYield = contentProp.GetString();
+                            }
                         }
                     }
                 }
-                catch (JsonException)
+                catch (Exception)
                 {
-                    // Ignore malformed JSON chunks
+                    // Ignore malformed JSON chunks or unexpected schemas
                 }
 
                 if (!string.IsNullOrEmpty(contentToYield))

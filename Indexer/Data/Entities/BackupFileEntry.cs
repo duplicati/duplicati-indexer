@@ -52,6 +52,11 @@ public class BackupFileEntry
     public string Path { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the file type/extension.
+    /// </summary>
+    public string FileType { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the file hash.
     /// </summary>
     public string Hash { get; set; } = string.Empty;

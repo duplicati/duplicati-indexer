@@ -37,11 +37,13 @@
             action
             [class.active]="sessionId() === session.id"
             (click)="loadSession(session.id)"
-            style="display: flex; align-items: center; justify-content: space-between;"
+            style="display: flex; align-items: center; justify-content: space-between"
           >
-            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ session.title }}</span>
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{
+              session.title
+            }}</span>
             @if (session.id === sessionId() && isLoading()) {
-              <sh-spinner size="12" style="margin-left: 8px; opacity: 0.6; flex-shrink: 0;" />
+              <sh-spinner size="12" style="margin-left: 8px; opacity: 0.6; flex-shrink: 0" />
             }
           </button>
         }
@@ -104,101 +106,69 @@
             <div class="conversation-section" #conversationContainer>
               <div class="conversation-list">
                 @for (message of conversation(); track message.id) {
-                  <div class="conversation-item">
-                    <div class="user-query" style="position: relative; padding-bottom: 8px">
+                  <div class="user-query">
+                    <div class="user-query-content">
+                      <sh-icon size="16" shTooltip="Revert" (click)="revertMessage(message.id)"
+                        >arrow-arc-left</sh-icon
+                      >
                       <sh-card class="query-card type-c">
                         <span class="query-text">{{ message.query }}</span>
                       </sh-card>
-                      <div
-                        style="
-                          display: flex;
-                          justify-content: flex-end;
-                          gap: 8px;
-                          font-size: 11px;
-                          color: var(--sh-text-disabled);
-                          margin-top: 4px;
-                        "
-                      >
-                        <span>{{ message.timestamp | date: 'h:mm:ss a' }}</span>
-                        <a
-                          href="javascript:void(0)"
-                          (click)="revertMessage(message.id)"
-                          style="color: inherit; text-decoration: underline"
-                          >Revert</a
-                        >
-                      </div>
                     </div>
+                    <p class="message-timestamp">{{ message.timestamp | date: 'h:mm:ss a' }}</p>
+                  </div>
 
-                    @if (message.events?.length) {
-                      <div class="events-container">
-                        @for (event of message.events; track $index) {
-                          @if (event.eventType === 'thought') {
-                            <sh-alert
-                              variant="outlined"
-                              class="event-alert"
-                              style="
-                                display: flex;
-                                flex-direction: column;
-                                cursor: {{ event.associatedFiles?.length ? 'pointer' : 'default' }};
-                              "
-                              (mouseenter)="hoverEvent(event)"
-                              (mouseleave)="hoverEvent(null)"
-                              (click)="clickEvent(event)"
-                              [class.active-filter]="
-                                selectedFiles() &&
-                                selectedFiles()!.join(',') === event.associatedFiles?.join(',')
-                              "
-                            >
-                              <div
-                                style="
-                                  display: flex;
-                                  justify-content: space-between;
-                                  align-items: flex-start;
-                                  width: 100%;
-                                "
-                              >
-                                <div>
-                                  <span class="event-type">Thought:</span>
-                                  <span class="event-content italic">{{ event.content }}</span>
-                                </div>
-                                @if (event.timestamp) {
-                                  <span
-                                    style="
-                                      font-size: 10px;
-                                      opacity: 0.6;
-                                      white-space: nowrap;
-                                      margin-left: 8px;
+                  <div class="conversation-item">
+                    @if (message.thoughtSteps?.length) {
+                      <sh-accordion class="thought-accordion">
+                        @for (step of message.thoughtSteps; track $index) {
+                          <details [open]="$last && message.isLoading">
+                            <summary>
+                              <div class="accordion-title">
+                                <span>
+                                  Thought:
+                                  {{
+                                    step.text!.length > 70
+                                      ? (step.text | slice: 0 : 70) + '...'
+                                      : step.text || 'Thinking...'
+                                  }}
+                                </span>
+
+                                @if (step.actionEvent) {
+                                  <sh-chip
+                                    size="small"
+                                    color="success"
+                                    variant="simple"
+                                    [style.cursor]="
+                                      step.actionEvent.associatedFiles?.length
+                                        ? 'pointer'
+                                        : 'default'
                                     "
-                                    >{{ event.timestamp | date: 'h:mm:ss a' }}</span
+                                    (mouseenter)="hoverEvent(step.actionEvent)"
+                                    (mouseleave)="hoverEvent(null)"
+                                    (click)="$event.preventDefault(); clickEvent(step.actionEvent!)"
+                                    [class.active-filter]="
+                                      selectedFiles() &&
+                                      selectedFiles()!.join(',') ===
+                                        step.actionEvent.associatedFiles?.join(',')
+                                    "
                                   >
+                                    Action: {{ step.actionEvent.content }}
+                                  </sh-chip>
                                 }
                               </div>
-                              @if (event.actionContent) {
-                                <div
-                                  style="
-                                    margin-top: 8px;
-                                    padding-top: 8px;
-                                    border-top: 1px dashed var(--sh-border-color, #2b2b2b);
-                                    width: 100%;
-                                  "
-                                >
-                                  <span
-                                    class="event-type"
-                                    style="color: var(--sh-color-success, #4ade80)"
-                                    >Action:</span
-                                  >
-                                  <span class="event-content">{{ event.actionContent }}</span>
-                                </div>
-                              }
-                            </sh-alert>
-                          }
+                              <sh-icon size="14">caret-down</sh-icon>
+                            </summary>
+
+                            <p>{{ step.text }}</p>
+                          </details>
                         }
-                      </div>
+                      </sh-accordion>
                     }
 
                     @if (message.isLoading) {
                       <sh-card
-                        class="secondary outline loading-card"
+                        class="type-c loading-card"
                         style="
                           display: flex;
                           flex-direction: column;
@@ -213,7 +183,7 @@
                           ></sh-spinner>
                           <span class="loading-text">Thinking...</span>
                         </div>
-                        @if (message.latestEvent) {
+                        @if (message.latestEvent && message.latestEvent.eventType !== 'thought') {
                           <div
                             style="
                               font-size: 13px;
@@ -222,9 +192,6 @@
                             "
                           >
                             @if (message.latestEvent.eventType === 'info') {
-                              <span class="italic">{{ message.latestEvent.content }}</span>
-                            } @else if (message.latestEvent.eventType === 'thought') {
-                              <span style="font-weight: 500">Thought:</span>
                               <span class="italic">{{ message.latestEvent.content }}</span>
                             } @else {
                               <span class="italic">{{ message.latestEvent.content }}</span>
@@ -235,17 +202,20 @@
                     }
 
                     @if (message.response) {
-                      <sh-card class="outline response-card">
+                      <div class="indexer-response-container">
                         <div class="response-header">
-                          <div class="ai-avatar">
-                            <app-logo [iconOnly]="true" />
-                          </div>
-                          <span class="response-label">Indexer</span>
+                          <app-logo [iconOnly]="true" />
+                          <span class="response-label" style="font-size: 11px">Indexer</span>
                         </div>
-                        <div class="response-content">
-                          <div class="response-text markdown-body" [innerHTML]="message.response | markdown"></div>
-                        </div>
-                      </sh-card>
+
+                        <sh-card class="response-card type-c">
+                          <div
+                            class="response-text markdown-body"
+                            [innerHTML]="message.response | markdown"
+                          ></div>
+                        </sh-card>
+                        <p class="message-timestamp">{{ message.timestamp | date: 'h:mm:ss a' }}</p>
+                      </div>
                     }
                   </div>
                 }
@@ -327,7 +297,7 @@
               (click)="clearFileFilter()"
               title="Clear filter"
             >
-              <sh-icon size="small">x</sh-icon>
+              <sh-icon size="small">x-square</sh-icon>
             </button>
           }
           <sh-chip size="small" variant="flat" color="primary" class="file-count">{{
@@ -360,6 +330,9 @@
                     <sh-icon size="small">file</sh-icon>
                     {{ file.path }}
                   </span>
+                  @if (file.score) {
+                    <app-relevancy-ring [score]="file.score" [size]="28"></app-relevancy-ring>
+                  }
                 </div>
               </sh-card>
             }

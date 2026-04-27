@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 export interface SearchResult {
   id: string;
@@ -21,6 +22,12 @@ export interface RrfSearchRequest {
   useWeightedFusion?: boolean;
 }
 
+export interface RrfSearchResponse {
+  query: string;
+  totalCount: number;
+  results: SearchResult[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -29,6 +36,8 @@ export class SearchService {
   private endpoint = '/api/search/rrf';
 
   searchQuery(request: RrfSearchRequest): Observable<SearchResult[]> {
-    return this.http.post<SearchResult[]>(this.endpoint, request);
+    return this.http.post<RrfSearchResponse>(this.endpoint, request).pipe(
+      map(res => res.results)
+    );
   }
 }
